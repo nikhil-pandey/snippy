@@ -4,7 +4,7 @@
 
 Snippy is a command-line tool for copying code snippets to the clipboard with optional formatting features. It's designed to make sharing code easier and more efficient, with special features for working with Large Language Models. ✨Here's a quick demo of Snippy in action:
 
-![Snippy Demo](assets/demo.mp4)
+https://github.com/user-attachments/assets/f86764c5-b195-4aaa-8e85-e2db8f05f367
 
 ## 🚀 Features
 
