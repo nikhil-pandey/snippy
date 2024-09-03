@@ -63,6 +63,23 @@ snippy watch
 
 This mode continuously monitors your clipboard. When you copy output from an LLM, snippy automatically processes and applies the code to your workspace. 🪄
 
+To use this feature effectively:
+
+1. Use prompts that generate code in a format Snippy can recognize.
+2. Check the `prompts/` directory for example prompts that work well with Snippy.
+3. Ensure your LLM output includes clear file paths and properly formatted code blocks.
+
+Example of a Snippy-friendly code format:
+
+````
+### src/main.rs
+```rust
+fn main() {
+    println!("Hello, Snippy!");
+}
+```
+`````
+
 ## 📜 License
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
