@@ -2,6 +2,14 @@
 name = "snippy"
 version = "0.1.0"
 edition = "2021"
+description = "A command-line tool for that makes using LLMs for code generation a breeze"
+authors = ["Nikhil Pandey <nikhil@nikhil.com.np>"]
+license = "GNU GPLv3"
+repository = "https://github.com/nikhil-pandey/snippy"
+homepage = "https://github.com/nikhil-pandey/snippy"
+readme = "README.md"
+keywords = ["cli", "snippet", "search", "code"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 arboard = "3.4.0"
