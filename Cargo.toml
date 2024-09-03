@@ -23,7 +23,7 @@ thiserror = "1.0.63"
 serde = { version = "1.0.208", features = ["derive"] }
 walkdir = "2.5.0"
 glob = "0.3.1"
-snippy-content-extractor = { path = "./snippy-content-extractor" }
+snippy-content-extractor = { path = "./snippy-content-extractor", version = "*" }
 
 [dev-dependencies]
 tempfile = "3.12.0"
