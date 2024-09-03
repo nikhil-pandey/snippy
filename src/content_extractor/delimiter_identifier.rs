@@ -1,5 +1,5 @@
-use crate::errors::ContentFormatError;
-use crate::parser::BlockType;
+use crate::content_extractor::errors::ContentFormatError;
+use crate::content_extractor::parser::BlockType;
 use regex::Regex;
 use std::collections::HashMap;
 use tracing::debug;

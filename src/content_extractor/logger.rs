@@ -1,4 +1,4 @@
-use crate::errors::FileOperationError;
+use crate::content_extractor::errors::FileOperationError;
 use chrono::Utc;
 use serde::Serialize;
 use std::fs::File;

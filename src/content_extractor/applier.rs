@@ -1,6 +1,6 @@
-use crate::diff_handler::apply_diff;
-use crate::errors::{DiffApplicationError, FileOperationError};
-use crate::parser::{BlockType, ParsedBlock};
+use crate::content_extractor::diff_handler::apply_diff;
+use crate::content_extractor::errors::{DiffApplicationError, FileOperationError};
+use crate::content_extractor::parser::{BlockType, ParsedBlock};
 use std::path::PathBuf;
 use tokio::fs as async_fs;
 use tracing::{debug, error, info, trace};

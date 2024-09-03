@@ -1018,10 +1018,13 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "async-trait",
+ "chrono",
  "clap",
+ "diffy",
  "glob",
+ "regex",
  "serde",
- "snippy-content-extractor",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tiktoken-rs",
@@ -1029,24 +1032,8 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-test",
- "walkdir",
-]
-
-[[package]]
-name = "snippy-content-extractor"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "diffy",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror",
- "tokio",
- "tracing",
  "uuid",
+ "walkdir",
 ]
 
 [[package]]

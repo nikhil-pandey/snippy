@@ -1,6 +1,6 @@
-use crate::delimiter_identifier::DelimiterIdentifier;
-use crate::errors::ContentExtractionError;
-use crate::parser::ParsedBlock;
+use crate::content_extractor::delimiter_identifier::DelimiterIdentifier;
+use crate::content_extractor::errors::ContentExtractionError;
+use crate::content_extractor::parser::ParsedBlock;
 use tracing::{instrument, trace, warn};
 
 #[derive(Debug)]

@@ -1,7 +1,7 @@
-use snippy_content_extractor::applier::ContentApplier;
-use snippy_content_extractor::delimiter_identifier::DelimiterIdentifier;
-use snippy_content_extractor::extractor::{ContentExtractor, MarkdownExtractor};
-use snippy_content_extractor::parser::{BlockType, ParsedBlock};
+use snippy::content_extractor::applier::ContentApplier;
+use snippy::content_extractor::delimiter_identifier::DelimiterIdentifier;
+use snippy::content_extractor::extractor::{ContentExtractor, MarkdownExtractor};
+use snippy::content_extractor::parser::{BlockType, ParsedBlock};
 use std::time::Instant;
 use tempfile::tempdir;
 use tokio::fs;

@@ -1,5 +1,5 @@
-use crate::errors::DiffApplicationError;
-use crate::logger::log_diff_error;
+use crate::content_extractor::errors::DiffApplicationError;
+use crate::content_extractor::logger::log_diff_error;
 use diffy::Patch;
 use std::path::PathBuf;
 

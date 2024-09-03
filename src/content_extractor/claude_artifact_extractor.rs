@@ -1,5 +1,5 @@
-use crate::errors::ContentExtractionError;
-use crate::parser::{BlockType, ParsedBlock};
+use crate::content_extractor::errors::ContentExtractionError;
+use crate::content_extractor::parser::{BlockType, ParsedBlock};
 use async_trait::async_trait;
 use regex::Regex;
 use tracing::{debug, trace};

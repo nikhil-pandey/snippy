@@ -1,7 +1,7 @@
 use crate::{ClipboardError, ClipboardWatcherConfig};
 use arboard::{Clipboard, Error as ArboardError};
 use async_trait::async_trait;
-use snippy_content_extractor::{ContentApplier, ContentExtractor, MarkdownExtractor};
+use crate::content_extractor::{ContentApplier, ContentExtractor, MarkdownExtractor};
 use std::path::PathBuf;
 use tokio::{
     signal,

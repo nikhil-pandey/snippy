@@ -1,5 +1,5 @@
-use snippy_content_extractor::applier::ContentApplier;
-use snippy_content_extractor::extractor::{ContentExtractor, MarkdownExtractor};
+use snippy::content_extractor::applier::ContentApplier;
+use snippy::content_extractor::extractor::{ContentExtractor, MarkdownExtractor};
 use tempfile::tempdir;
 use tokio::fs;
 use tracing::debug;

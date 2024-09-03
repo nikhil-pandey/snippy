@@ -1,5 +1,5 @@
-use snippy_content_extractor::applier::ContentApplier;
-use snippy_content_extractor::parser::{BlockType, ParsedBlock};
+use snippy::content_extractor::applier::ContentApplier;
+use snippy::content_extractor::parser::{BlockType, ParsedBlock};
 use tempfile::tempdir;
 use tokio::fs;
 use tracing::debug;

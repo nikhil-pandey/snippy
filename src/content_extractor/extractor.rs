@@ -1,6 +1,6 @@
-use crate::block_extractor::BlockExtractor;
-use crate::errors::ContentExtractionError;
-use crate::parser::ParsedBlock;
+use crate::content_extractor::block_extractor::BlockExtractor;
+use crate::content_extractor::errors::ContentExtractionError;
+use crate::content_extractor::parser::ParsedBlock;
 use async_trait::async_trait;
 use tracing::{debug, trace};
 
