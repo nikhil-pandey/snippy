@@ -1,9 +1,9 @@
+pub mod content_extractor;
 pub mod copy;
 pub mod reporting;
 pub mod trie;
 pub mod utils;
 pub mod watch;
-pub mod content_extractor;
 
 pub use copy::copy_files_to_clipboard;
 pub use watch::watch_clipboard;
@@ -36,6 +36,7 @@ pub struct ClipboardCopierConfig {
     pub no_stats: bool,
     pub filename_format: String,
     pub first_line: String,
+    pub xml: bool,
 }
 
 #[derive(Debug, Clone, Parser)]

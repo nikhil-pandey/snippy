@@ -61,7 +61,9 @@ pub fn get_file_icon(path: &Path) -> Result<&'static str, ClipboardError> {
     debug!("Getting file icon for path: {:?}", path);
     match path.extension().and_then(|e| e.to_str()) {
         // Programming Languages
-        Some("py") | Some("pyw") | Some("pyc") | Some("pyd") | Some("pyo") | Some("pyi") => Ok("🐍"),
+        Some("py") | Some("pyw") | Some("pyc") | Some("pyd") | Some("pyo") | Some("pyi") => {
+            Ok("🐍")
+        }
         Some("js") => Ok("🟨"),
         Some("ts") | Some("tsx") => Ok("🔷"),
         Some("html") | Some("htm") => Ok("🌐"),
@@ -92,7 +94,9 @@ pub fn get_file_icon(path: &Path) -> Result<&'static str, ClipboardError> {
         Some("doc") | Some("docx") => Ok("📘"),
 
         // Images
-        Some("jpg") | Some("jpeg") | Some("png") | Some("gif") | Some("svg") | Some("bmp") => Ok("🖼️"),
+        Some("jpg") | Some("jpeg") | Some("png") | Some("gif") | Some("svg") | Some("bmp") => {
+            Ok("🖼️")
+        }
 
         // Archives
         Some("zip") | Some("tar") | Some("gz") | Some("7z") | Some("rar") => Ok("🗜️"),
