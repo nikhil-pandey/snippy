@@ -41,6 +41,11 @@ impl ClipboardCopier for BasicClipboardCopier {
             .map_err(|e| ClipboardError::TokenizerModelError(e.to_string()))?;
         let mut token_counts: HashMap<PathBuf, usize> = HashMap::new();
 
+        // If XML formatting is enabled, wrap all file contents within a root XML element
+        if copier_config.xml {
+            all_content.push_str("<files>\n");
+        }
+
         for file in file_list {
             debug!("Processing file: {}", file);
             match read_file_content(&file).await {
@@ -53,9 +58,15 @@ impl ClipboardCopier for BasicClipboardCopier {
                         copier_config.line_number,
                         &copier_config.prefix,
                         copier_config.filename_format.clone(),
+                        copier_config.xml,
                     )?;
                     trace!("Formatted content for file: {}", file);
-                    all_content.push_str(&formatted_content);
+
+                    if copier_config.xml {
+                        all_content.push_str(&formatted_content);
+                    } else {
+                        all_content.push_str(&formatted_content);
+                    }
 
                     if !copier_config.no_stats {
                         trace!("Encoding content to get token count for file: {}", file);
@@ -71,7 +82,16 @@ impl ClipboardCopier for BasicClipboardCopier {
             }
         }
 
-        let final_content = format!("{}{}", copier_config.first_line, all_content);
+        if copier_config.xml {
+            all_content.push_str("</files>\n");
+        }
+
+        let final_content = if copier_config.xml {
+            all_content
+        } else {
+            format!("{}{}", copier_config.first_line, all_content)
+        };
+
         trace!("Final content length: {}", final_content.len());
 
         if !copier_config.no_stats {

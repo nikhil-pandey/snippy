@@ -55,7 +55,12 @@ pub fn format_content(
     line_number: Option<usize>,
     prefix: &str,
     filename_format: String,
+    xml: bool,
 ) -> Result<String, ClipboardError> {
+    if xml {
+        return format_xml_content(content, file, line_number);
+    }
+
     let mut formatted_content = String::new();
     let file = normalize_path(file);
     let ext = file.split('.').last().unwrap_or("");
@@ -88,6 +93,105 @@ pub fn format_content(
     }
 
     Ok(formatted_content)
+}
+
+fn format_xml_content(
+    content: &str,
+    file: &str,
+    line_number: Option<usize>,
+) -> Result<String, ClipboardError> {
+    let path = normalize_path(file);
+    let ext = file.split('.').last().unwrap_or("unknown");
+    let file_type = get_file_type(ext)?;
+
+    let mut formatted_content = String::new();
+    formatted_content.push_str(&format!("<file path=\"{path}\" type=\"{file_type}\">\n"));
+
+    if let Some(digits) = line_number {
+        // When line numbers are provided, wrap each line in a <line> tag
+        for (i, line) in content.lines().enumerate() {
+            formatted_content.push_str(&format!(
+                "<line number=\"{:0width$}\">",
+                i + 1,
+                width = digits
+            ));
+            formatted_content.push_str(&line);
+            formatted_content.push_str("</line>\n");
+        }
+    } else {
+        // When line numbers are not provided, output content directly
+        formatted_content.push_str(&content);
+        formatted_content.push('\n');
+    }
+
+    formatted_content.push_str("</file>\n");
+
+    Ok(formatted_content)
+}
+
+fn get_file_type(ext: &str) -> Result<&'static str, ClipboardError> {
+    match ext {
+        // Programming languages
+        "rs" => Ok("rust"),
+        "py" => Ok("python"),
+        "js" => Ok("javascript"),
+        "ts" => Ok("typescript"),
+        "tsx" => Ok("typescript"),
+        "java" => Ok("java"),
+        "c" => Ok("c"),
+        "cpp" => Ok("cpp"),
+        "h" => Ok("header"),
+        "cs" => Ok("csharp"),
+        "fs" => Ok("fsharp"),
+        "go" => Ok("go"),
+        "rb" => Ok("ruby"),
+        "php" => Ok("php"),
+        "swift" => Ok("swift"),
+        "kt" | "kts" => Ok("kotlin"),
+        "r" => Ok("r"),
+        "scala" => Ok("scala"),
+        "lua" => Ok("lua"),
+        "dart" => Ok("dart"),
+
+        // Web-related languages
+        "html" => Ok("html"),
+        "xml" => Ok("xml"),
+        "xhtml" => Ok("xhtml"),
+        "css" => Ok("css"),
+        "scss" => Ok("scss"),
+        "sass" => Ok("sass"),
+        "less" => Ok("less"),
+
+        // Scripting and configuration files
+        "sh" => Ok("shell"),
+        "bash" => Ok("bash"),
+        "zsh" => Ok("zsh"),
+        "toml" => Ok("toml"),
+        "yaml" | "yml" => Ok("yaml"),
+        "json" => Ok("json"),
+        "ini" => Ok("ini"),
+        "conf" => Ok("conf"),
+
+        // Data formats
+        "csv" => Ok("csv"),
+        "tsv" => Ok("tsv"),
+        "md" => Ok("markdown"),
+        "rst" => Ok("reStructuredText"),
+
+        // Markup languages
+        "tex" => Ok("latex"),
+        "bib" => Ok("bibtex"),
+
+        // Miscellaneous
+        "sql" => Ok("sql"),
+        "bat" => Ok("batch"),
+        "ps1" => Ok("powershell"),
+        "dockerfile" => Ok("dockerfile"),
+
+        // Binary files and unknown types
+        "bin" => Ok("binary"),
+        _ => Ok("unknown"),
+    }
 }
 
 fn get_filename_comment(ext: &str, filename: &str) -> String {

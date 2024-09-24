@@ -123,10 +123,10 @@ impl DelimiterIdentifier {
                     .find(|&&(pos, _)| {
                         pos < start_index
                             && pos
-                            >= delimiters
-                            .last()
-                            .map(|d: &DelimitedBlock| d.start_index)
-                            .unwrap_or(0)
+                                >= delimiters
+                                    .last()
+                                    .map(|d: &DelimitedBlock| d.start_index)
+                                    .unwrap_or(0)
                     })
                     .map(|&(_, ref fname)| fname.clone())
             });

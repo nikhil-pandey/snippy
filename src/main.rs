@@ -37,6 +37,8 @@ struct CopyArgs {
     filename_format: Option<String>,
     #[arg(long, default_value = "# Relevant Code\n")]
     pub first_line: String,
+    #[arg(long, help = "Format the output as XML")]
+    pub xml: bool,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -72,6 +74,7 @@ async fn main() {
                     .clone()
                     .unwrap_or_else(|| "None".to_owned()),
                 first_line: args.first_line,
+                xml: args.xml,
             };
             if let Err(e) = copy_files_to_clipboard(copier_config, args.files).await {
                 eprintln!("Error copying files to clipboard: {}", e);

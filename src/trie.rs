@@ -57,6 +57,9 @@ impl Trie {
                 .entry(component_str)
                 .or_insert_with(TrieNode::new);
         }
+        if current_node.token_count.is_some() {
+            trace!("Overwriting existing token count for path: {:?}", path);
+        }
         current_node.token_count = Some(token_count);
         Ok(())
     }
