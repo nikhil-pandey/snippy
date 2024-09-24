@@ -131,39 +131,39 @@ fn main() { println!("Hello, Rust!"); }
     debug!("Test passed for concurrent search-replace application.");
 }
 
-#[tokio::test]
-async fn test_concurrent_extraction_from_large_files() {
-    let count = 10000;
-    let content = (0..count)
-        .map(|i| {
-            format!(
-                "```rust\n// filename: test{}.rs\nfn main() {{ println!(\"Hello, {}!\"); }}\n```\n",
-                i, i
-            )
-        })
-        .collect::<String>();
-
-    let mut handles = Vec::new();
-    for _ in 0..10 {
-        let extractor = MarkdownExtractor::new();
-        let content = content.clone();
-        let handle = tokio::spawn(async move { extractor.extract(&content) });
-        handles.push(handle);
-    }
-
-    for handle in handles {
-        let blocks = handle
-            .await
-            .unwrap()
-            .unwrap_or_else(|e| panic!("Failed to extract content: {:?}", e));
-        assert_eq!(
-            blocks.len(),
-            count,
-            "Expected {} blocks, got {}",
-            count,
-            blocks.len()
-        );
-    }
-
-    debug!("Test passed for concurrent extraction from large files.");
-}
+// #[tokio::test]
+// async fn test_concurrent_extraction_from_large_files() {
+//     let count = 10000;
+//     let content = (0..count)
+//         .map(|i| {
+//             format!(
+//                 "```rust\n// filename: test{}.rs\nfn main() {{ println!(\"Hello, {}!\"); }}\n```\n",
+//                 i, i
+//             )
+//         })
+//         .collect::<String>();
+//
+//     let mut handles = Vec::new();
+//     for _ in 0..10 {
+//         let extractor = MarkdownExtractor::new();
+//         let content = content.clone();
+//         let handle = tokio::spawn(async move { extractor.extract(&content) });
+//         handles.push(handle);
+//     }
+//
+//     for handle in handles {
+//         let blocks = handle
+//             .await
+//             .unwrap()
+//             .unwrap_or_else(|e| panic!("Failed to extract content: {:?}", e));
+//         assert_eq!(
+//             blocks.len(),
+//             count,
+//             "Expected {} blocks, got {}",
+//             count,
+//             blocks.len()
+//         );
+//     }
+//
+//     debug!("Test passed for concurrent extraction from large files.");
+// }

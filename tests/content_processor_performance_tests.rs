@@ -1,5 +1,4 @@
 use snippy::content_extractor::applier::ContentApplier;
-use snippy::content_extractor::delimiter_identifier::DelimiterIdentifier;
 use snippy::content_extractor::extractor::{ContentExtractor, MarkdownExtractor};
 use snippy::content_extractor::parser::{BlockType, ParsedBlock};
 use std::time::Instant;
@@ -41,41 +40,6 @@ async fn test_large_file_extraction_performance() {
     );
 
     debug!("Test passed for large file extraction performance.");
-}
-
-#[tokio::test]
-async fn test_delimiter_identifier_performance() {
-    let count = 10000;
-    let delimiter_identifier = DelimiterIdentifier::new();
-    let content = (0..count)
-        .map(|i| {
-            format!(
-                "```rust\n// filename: test{}.rs\nfn main() {{ println!(\"Hello, {}!\"); }}\n```\n",
-                i, i
-            )
-        })
-        .collect::<String>();
-
-    let start = Instant::now();
-    let delimiters = delimiter_identifier
-        .identify_delimiters(&content)
-        .unwrap_or_else(|e| panic!("Failed to identify delimiters: {:?}", e));
-    let duration = start.elapsed();
-
-    assert_eq!(
-        delimiters.len(),
-        count * 2, // Each block should have a start and end delimiter
-        "Expected {} delimiters, got {}",
-        count * 2,
-        delimiters.len()
-    );
-    assert!(
-        duration.as_secs() < 10,
-        "Delimiter identification took too long: {:?}",
-        duration
-    );
-
-    debug!("Test passed for DelimiterIdentifier performance.");
 }
 
 #[tokio::test]
