@@ -6,7 +6,6 @@ use snippy::logger::initialize_logger;
 use snippy::watch::{ClipboardWatcher, WatcherConfig};
 use std::path::PathBuf;
 use tracing::{error, info};
-use tracing_subscriber;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

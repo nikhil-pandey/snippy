@@ -1,5 +1,4 @@
 use crate::errors::ClipboardError;
-use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use tokio::fs as async_fs;

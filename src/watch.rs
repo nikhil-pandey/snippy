@@ -1,9 +1,7 @@
 use crate::applier::{Applier, DiffApplier, FullContentApplier, SearchReplaceApplier};
 use crate::errors::ClipboardError;
 use crate::extractor::Extractor;
-use crate::utils::{read_file_async, write_file_async};
 use arboard::Clipboard;
-use async_trait::async_trait;
 use std::path::PathBuf;
 use tokio::signal;
 use tokio::time::{self, Duration};

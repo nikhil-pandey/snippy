@@ -10,4 +10,3 @@ pub mod watch;
 
 pub use copy::copy_files_to_clipboard;
 
-use clap::Parser;

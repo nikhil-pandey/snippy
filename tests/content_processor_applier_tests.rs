@@ -250,7 +250,6 @@ replacement_function();
 async fn test_search_replace_blocks_in_file() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
     let applier = SearchReplaceApplier::new(&base_path);
 
     let initial_content = "fn main() {\n    println!(\"Hello, world!\");\n}";
@@ -304,7 +303,6 @@ async fn test_search_replace_blocks_in_file() {
 async fn test_create_new_file_with_empty_search_block() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
     let applier = SearchReplaceApplier::new(&base_path);
 
     let content = r#"
@@ -348,7 +346,6 @@ fn main() {
 async fn test_delete_file_with_empty_replace_block() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
     let applier = SearchReplaceApplier::new(&base_path);
 
     let initial_content = "fn main() {\n    println!(\"This file will be deleted.\");\n}\n";
@@ -391,7 +388,6 @@ fn main() {
 async fn test_whitespace_file_deletion_with_empty_replace_block() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
     let applier = SearchReplaceApplier::new(&base_path);
 
     let initial_content = " \n \n";

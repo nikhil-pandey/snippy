@@ -48,7 +48,6 @@ async fn test_large_file_extraction_performance() {
 async fn test_large_file_apply_full_content_performance() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
     let applier = FullContentApplier::new(&base_path);
 
     let blocks: Vec<ParsedBlock> = (0..1000)
@@ -82,7 +81,6 @@ async fn test_large_diff_apply_performance() {
     let count = 10_000;
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
     let applier = FullContentApplier::new(&base_path);
 
     let initial_content = (0..count)

@@ -1,7 +1,7 @@
 use crate::applier::Applier;
 use crate::errors::ClipboardError;
 use crate::extractor::ParsedBlock;
-use crate::utils::{read_file_async, write_file_async};
+use crate::utils::write_file_async;
 use async_trait::async_trait;
 use std::path::PathBuf;
 use tracing::{debug, info};

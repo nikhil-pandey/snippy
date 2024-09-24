@@ -1,6 +1,4 @@
 use crate::errors::ClipboardError;
-use crate::extractor::markdown::MarkdownExtractor;
-use async_trait::async_trait;
 pub mod markdown;
 
 #[derive(Debug, Clone)]

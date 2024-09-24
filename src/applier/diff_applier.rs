@@ -5,7 +5,7 @@ use crate::utils::{read_file_async, write_file_async};
 use async_trait::async_trait;
 use diffy::Patch;
 use std::path::PathBuf;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 pub struct DiffApplier {
     base_path: PathBuf,
