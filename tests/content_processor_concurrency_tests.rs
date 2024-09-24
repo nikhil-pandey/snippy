@@ -1,16 +1,14 @@
-use snippy::content_extractor::ContentApplier;
-use snippy::content_extractor::{BlockType, ParsedBlock};
-use snippy::content_extractor::{ContentExtractor, MarkdownExtractor};
 use tempfile::tempdir;
 use tokio::fs;
 use tracing::debug;
+use snippy::applier::{Applier, FullContentApplier, SearchReplaceApplier};
+use snippy::extractor::{BlockType, ParsedBlock};
 
 #[tokio::test]
 async fn test_concurrent_diff_application() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = FullContentApplier::new(&base_path);
 
     let initial_content = "fn main() { println!(\"Hello, world!\"); }\n";
     let mut handles = Vec::new();
@@ -68,8 +66,7 @@ async fn test_concurrent_diff_application() {
 async fn test_concurrent_search_replace_application() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = SearchReplaceApplier::new(&base_path);
 
     let initial_content = r#"use std::collections::HashMap;
 fn main() { println!("Hello, world!"); }
@@ -95,7 +92,7 @@ fn main() { println!("Hello, world!"); }
 fn main() { println!("Hello, Rust!"); }
 >>>>>>> REPLACE
 "#
-            .to_string(),
+                .to_string(),
             block_type: BlockType::SearchReplaceBlock,
         };
 

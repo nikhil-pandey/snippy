@@ -1,15 +1,14 @@
-use snippy::content_extractor::ContentApplier;
-use snippy::content_extractor::{BlockType, ParsedBlock};
 use tempfile::tempdir;
 use tokio::fs;
 use tracing::debug;
+use snippy::applier::{Applier, DiffApplier, FullContentApplier, SearchReplaceApplier};
+use snippy::extractor::{BlockType, ParsedBlock};
 
 #[tokio::test]
 async fn test_content_applier_apply_full_content_to_new_file() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = FullContentApplier::new(&base_path);
 
     let block = ParsedBlock {
         filename: "new_file.rs".to_string(),
@@ -37,8 +36,7 @@ async fn test_content_applier_apply_full_content_to_new_file() {
 async fn test_content_applier_apply_diff_with_error() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = DiffApplier::new(&base_path);
 
     let initial_content = "fn main() { println!(\"Hello, world!\"); }";
     let file_path = base_path.join("test.rs");
@@ -52,7 +50,7 @@ async fn test_content_applier_apply_diff_with_error() {
 -fn main() { println!("Hello, world!"); }
 +fn main() { println!("Hello, Rust!);
 "#
-        .to_string(), // Note the intentional error in the diff
+        .to_string(),
         block_type: BlockType::UnifiedDiff,
     };
 
@@ -69,8 +67,7 @@ async fn test_content_applier_apply_diff_with_error() {
 async fn test_content_applier_apply_valid_diff() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = DiffApplier::new(&base_path);
 
     let initial_content = "fn main() { println!(\"Hello, world!\"); }\n";
     let file_path = base_path.join("test.rs");
@@ -115,8 +112,7 @@ async fn test_content_applier_apply_valid_diff() {
 async fn test_content_applier_apply_full_content_to_existing_file_with_different_content() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = FullContentApplier::new(&base_path);
 
     let initial_content = "fn main() { println!(\"Hello, world!\"); }";
     let file_path = base_path.join("existing_file.rs");
@@ -148,8 +144,7 @@ async fn test_content_applier_apply_full_content_to_existing_file_with_different
 async fn test_content_applier_apply_full_content_to_existing_file_with_same_content() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = FullContentApplier::new(&base_path);
 
     let initial_content = "fn main() { println!(\"Hello, world!\"); }";
     let file_path = base_path.join("existing_file.rs");
@@ -178,8 +173,7 @@ async fn test_content_applier_apply_full_content_to_existing_file_with_same_cont
 async fn test_content_applier_apply_search_replace_block_success() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = SearchReplaceApplier::new(&base_path);
 
     let initial_content = r#"use std::collections::HashMap;
 fn main() { println!("Hello, world!"); }
@@ -227,8 +221,7 @@ fn main() { println!("Hello, Rust!"); }
 async fn test_content_applier_apply_search_replace_block_fail() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
-    let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = SearchReplaceApplier::new(&base_path);
 
     let initial_content = "fn main() { println!(\"Hello, world!\"); }";
     let file_path = base_path.join("test_search_replace_fail.rs");

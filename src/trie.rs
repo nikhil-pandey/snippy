@@ -1,7 +1,7 @@
-use crate::ClipboardError;
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{debug, trace};
+use crate::errors::ClipboardError;
 
 /// Represents a node in a trie.
 pub struct TrieNode {
@@ -23,10 +23,10 @@ impl TrieNode {
         trace!("Calculating total tokens for TrieNode");
         self.token_count.unwrap_or(0)
             + self
-                .children
-                .values()
-                .map(|child| child.calculate_total_tokens())
-                .sum::<usize>()
+            .children
+            .values()
+            .map(|child| child.calculate_total_tokens())
+            .sum::<usize>()
     }
 }
 

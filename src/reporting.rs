@@ -1,8 +1,8 @@
 use crate::trie::{Trie, TrieNode};
-use crate::ClipboardError;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, trace};
+use crate::errors::ClipboardError;
 
 /// Prints the statistics of token counts for files.
 pub fn print_stats(token_counts: &HashMap<PathBuf, usize>) -> Result<(), ClipboardError> {
@@ -41,7 +41,7 @@ fn print_tree(node: &TrieNode, prefix: &str, is_last: bool) -> Result<(), Clipbo
                 prefix,
                 connector,
                 get_file_icon(&Path::new(name))
-                    .map_err(|e| ClipboardError::FileReadError(e.to_string()))?,
+                    .map_err(|e| ClipboardError::IoError(e.to_string()))?,
                 name,
                 child.token_count.unwrap()
             );

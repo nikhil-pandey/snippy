@@ -1,10 +1,10 @@
-use snippy::content_extractor::applier::ContentApplier;
-use snippy::content_extractor::extractor::{ContentExtractor, MarkdownExtractor};
-use snippy::content_extractor::parser::{BlockType, ParsedBlock};
 use std::time::Instant;
 use tempfile::tempdir;
 use tokio::fs;
 use tracing::debug;
+use snippy::applier::{Applier, FullContentApplier};
+use snippy::extractor::{BlockType, Extractor, ParsedBlock};
+use snippy::extractor::markdown::MarkdownExtractor;
 
 #[tokio::test]
 // #[tracing_test::traced_test]
@@ -47,7 +47,7 @@ async fn test_large_file_apply_full_content_performance() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
     let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = FullContentApplier::new(&base_path);
 
     let blocks: Vec<ParsedBlock> = (0..1000)
         .map(|i| ParsedBlock {
@@ -81,7 +81,7 @@ async fn test_large_diff_apply_performance() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
     let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = FullContentApplier::new(&base_path);
 
     let initial_content = (0..count)
         .map(|i| format!("fn main() {{ println!(\"Hello, {}!\"); }}\n", i))

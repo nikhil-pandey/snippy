@@ -1,4 +1,6 @@
-use crate::ClipboardError;
+use crate::errors::ClipboardError;
+use std::fs;
+use std::path::PathBuf;
 use std::path::Path;
 use tokio::fs as async_fs;
 use tracing::warn;
@@ -45,7 +47,7 @@ pub fn expand_patterns(patterns: &[String]) -> Result<Vec<String>, Box<dyn std::
 pub async fn read_file_content(file_path: &str) -> Result<String, ClipboardError> {
     async_fs::read_to_string(file_path)
         .await
-        .map_err(|err| ClipboardError::FileReadError(err.to_string()))
+        .map_err(|err| ClipboardError::IoError(err.to_string()))
 }
 
 pub fn format_content(
@@ -216,4 +218,19 @@ fn get_line_numbered_content(content: &str, line_number: Option<usize>, prefix: 
         numbered_content.push('\n');
     }
     numbered_content
+}
+
+pub async fn read_file_async(path: &PathBuf) -> Result<String, std::io::Error> {
+    async_fs::read_to_string(path).await
+}
+
+pub async fn write_file_async(path: &PathBuf, content: &str) -> Result<(), std::io::Error> {
+    if let Some(parent) = path.parent() {
+        async_fs::create_dir_all(parent).await?;
+    }
+    async_fs::write(path, content).await
+}
+
+pub async fn remove_file_async(path: &PathBuf) -> Result<(), std::io::Error> {
+    async_fs::remove_file(path).await
 }

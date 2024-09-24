@@ -1,10 +1,12 @@
+use std::path::PathBuf;
 use clap::{Parser, Subcommand};
-use snippy::{
-    copy_files_to_clipboard, watch_clipboard, ClipboardCopierConfig, ClipboardWatcherConfig,
-};
+use tracing::{error, info};
+use snippy::copy_files_to_clipboard;
 use tracing_subscriber;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
+use snippy::copy::ClipboardCopierConfig;
+use snippy::extractor::markdown::MarkdownExtractor;
+use snippy::logger::initialize_logger;
+use snippy::watch::{ClipboardWatcher, WatcherConfig};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -54,12 +56,7 @@ struct WatchArgs {
 #[tokio::main]
 async fn main() {
     let cli_args = CliArgs::parse();
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
-        ))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    initialize_logger();
 
     match cli_args.cmd {
         SubCommands::Copy(args) => {
@@ -81,14 +78,21 @@ async fn main() {
             }
         }
         SubCommands::Watch(args) => {
-            let watcher_config = ClipboardWatcherConfig {
+            info!("Starting Clipboard Watcher");
+
+            let watcher_config = WatcherConfig {
                 interval_ms: args.interval_ms,
-                watch_path: args.watch_path,
-                first_line: args.first_line,
+                watch_path: PathBuf::from(args.watch_path.unwrap_or_else(|| ".".to_owned())),
+                first_line_identifier: args.first_line,
             };
-            if let Err(e) = watch_clipboard(watcher_config).await {
-                eprintln!("Error watching clipboard: {}", e);
+
+            let watcher = ClipboardWatcher::new(watcher_config, MarkdownExtractor::new());
+
+            if let Err(e) = watcher.run().await {
+                error!("Clipboard watcher terminated with error: {}", e);
             }
+
+            info!("Clipboard Watcher has stopped.");
         }
     }
 }

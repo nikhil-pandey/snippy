@@ -1,15 +1,16 @@
-use snippy::content_extractor::applier::ContentApplier;
-use snippy::content_extractor::extractor::{ContentExtractor, MarkdownExtractor};
 use tempfile::tempdir;
 use tokio::fs;
 use tracing::debug;
+use snippy::applier::{Applier, FullContentApplier};
+use snippy::extractor::Extractor;
+use snippy::extractor::markdown::MarkdownExtractor;
 
 #[tokio::test]
 async fn test_complete_workflow() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
     let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = FullContentApplier::new(&base_path);
 
     let extractor = MarkdownExtractor::new();
     let content = r#"
@@ -89,7 +90,7 @@ async fn test_search_replace_blocks_in_file() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
     let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = FullContentApplier::new(&base_path);
 
     let initial_content = "fn main() {\n    println!(\"Hello, world!\");\n}";
     let file_path = base_path.join("test.rs");
@@ -143,7 +144,7 @@ async fn test_create_new_file_with_empty_search_block() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
     let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = FullContentApplier::new(&base_path);
 
     let content = r#"
 ```replace
@@ -187,7 +188,7 @@ async fn test_delete_file_with_empty_replace_block() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
     let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = FullContentApplier::new(&base_path);
 
     let initial_content = "fn main() {\n    println!(\"This file will be deleted.\");\n}\n";
     let file_path = base_path.join("file_to_delete.rs");
@@ -230,7 +231,7 @@ async fn test_whitespace_file_deletion_with_empty_replace_block() {
     let dir = tempdir().unwrap();
     let base_path = dir.path().to_path_buf();
     let logs_path = base_path.clone();
-    let applier = ContentApplier::new(base_path.clone(), logs_path);
+    let applier = FullContentApplier::new(&base_path);
 
     let initial_content = " \n \n";
     let file_path = base_path.join("whitespace_file_to_delete.rs");
