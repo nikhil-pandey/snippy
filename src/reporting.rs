@@ -1,8 +1,8 @@
+use crate::errors::ClipboardError;
 use crate::trie::{Trie, TrieNode};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, trace};
-use crate::errors::ClipboardError;
 
 /// Prints the statistics of token counts for files.
 pub fn print_stats(token_counts: &HashMap<PathBuf, usize>) -> Result<(), ClipboardError> {

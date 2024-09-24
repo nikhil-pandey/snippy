@@ -1,8 +1,8 @@
+use snippy::applier::{Applier, FullContentApplier, SearchReplaceApplier};
+use snippy::extractor::{BlockType, ParsedBlock};
 use tempfile::tempdir;
 use tokio::fs;
 use tracing::debug;
-use snippy::applier::{Applier, FullContentApplier, SearchReplaceApplier};
-use snippy::extractor::{BlockType, ParsedBlock};
 
 #[tokio::test]
 async fn test_concurrent_diff_application() {
@@ -92,7 +92,7 @@ fn main() { println!("Hello, world!"); }
 fn main() { println!("Hello, Rust!"); }
 >>>>>>> REPLACE
 "#
-                .to_string(),
+            .to_string(),
             block_type: BlockType::SearchReplaceBlock,
         };
 

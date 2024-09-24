@@ -1,9 +1,9 @@
 use crate::applier::Applier;
 use crate::errors::ClipboardError;
-use crate::utils::{read_file_async, write_file_async};
 use crate::extractor::ParsedBlock;
-use diffy::{Patch};
+use crate::utils::{read_file_async, write_file_async};
 use async_trait::async_trait;
+use diffy::Patch;
 use std::path::PathBuf;
 use tracing::{debug, error, info};
 
@@ -45,20 +45,16 @@ pub async fn apply_diff(
     match patch_result {
         Ok(patch) => match diffy::apply(current_content, &patch) {
             Ok(new_content) => Ok(new_content),
-            Err(e) => {
-                Err(ClipboardError::DiffError(format!(
-                    "Failed to apply diff for file {}: {}",
-                    path.display(),
-                    e.to_string()
-                )))
-            }
-        },
-        Err(e) => {
-            Err(ClipboardError::DiffError(format!(
-                "Failed to parse diff for file {}: {}",
+            Err(e) => Err(ClipboardError::DiffError(format!(
+                "Failed to apply diff for file {}: {}",
                 path.display(),
                 e.to_string()
-            )))
-        }
+            ))),
+        },
+        Err(e) => Err(ClipboardError::DiffError(format!(
+            "Failed to parse diff for file {}: {}",
+            path.display(),
+            e.to_string()
+        ))),
     }
 }

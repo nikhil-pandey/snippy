@@ -1,9 +1,9 @@
 use super::{BlockType, Extractor, ParsedBlock};
 use crate::errors::ClipboardError;
-use markdown::{to_mdast, ParseOptions, Constructs};
-use markdown::mdast::Node;
-use regex::Regex;
 use async_trait::async_trait;
+use markdown::mdast::Node;
+use markdown::{to_mdast, Constructs, ParseOptions};
+use regex::Regex;
 use tracing::{debug, trace};
 
 pub struct MarkdownExtractor {}
@@ -43,22 +43,19 @@ impl Extractor for MarkdownExtractor {
                     let code_content = code_block.value.trim().to_string() + "\n";
                     let language = code_block.lang.clone().unwrap_or_default();
 
-                    match language.as_str() {
-                        "diff" => {
-                            if let Some(block) = parse_diff_block(&code_content)? {
-                                blocks.push(block);
-                            }
-                        }
-                        "replace" => {
-                            if let Some(block) = parse_search_replace_block(&code_content, &children, index)? {
-                                blocks.push(block);
-                            }
-                        }
-                        _ => {
-                            if let Some(block) = parse_full_content_block(&code_content, &children, index)? {
-                                blocks.push(block);
-                            }
-                        }
+                    let block = match language.as_str() {
+                        "diff" => parse_diff_block(&code_content)?,
+                        "replace" => parse_block(
+                            &code_content,
+                            &children,
+                            index,
+                            BlockType::SearchReplaceBlock,
+                        )?,
+                        _ => parse_block(&code_content, &children, index, BlockType::FullContent)?,
+                    };
+
+                    if let Some(block) = block {
+                        blocks.push(block);
                     }
                 }
             }
@@ -69,7 +66,10 @@ impl Extractor for MarkdownExtractor {
             blocks.len(),
             start_time.elapsed()
         );
-        trace!("Markdown content extraction took {:?}", start_time.elapsed());
+        trace!(
+            "Markdown content extraction took {:?}",
+            start_time.elapsed()
+        );
 
         Ok(blocks)
     }
@@ -95,54 +95,36 @@ fn parse_diff_block(content: &str) -> Result<Option<ParsedBlock>, ClipboardError
     Ok(None)
 }
 
-fn parse_search_replace_block(content: &str, children: &[Node], index: usize) -> Result<Option<ParsedBlock>, ClipboardError> {
-    // First, check the first line of the code block for the filename
-    if let Some(first_line) = content.lines().next() {
-        let filename_regex = Regex::new(
-            r"^\s*(?://|#)\s*filename:\s*(.+)|^\s*/\*\s*filename:\s*(.+)\s*\*/|^\s*<!--\s*filename:\s*(.+)\s*-->"
-        )?;
-
-        if let Some(caps) = filename_regex.captures(first_line) {
-            let filename = caps
-                .get(1)
-                .or_else(|| caps.get(2))
-                .or_else(|| caps.get(3))
-                .unwrap()
-                .as_str()
-                .trim()
-                .to_string();
-            let code_content = content
-                .split_once('\n')
-                .map(|(_, rest)| rest)
-                .unwrap_or("")
-                .to_string();
-            return Ok(Some(ParsedBlock {
-                filename,
-                content: code_content,
-                block_type: BlockType::SearchReplaceBlock,
-            }));
-        }
+fn parse_block(
+    content: &str,
+    children: &[Node],
+    index: usize,
+    block_type: BlockType,
+) -> Result<Option<ParsedBlock>, ClipboardError> {
+    if let Some(block) = extract_block_from_content(content, &block_type)? {
+        return Ok(Some(block));
     }
 
-    // If no filename found in the first line, check the context
     if let Some(filename) = extract_filename_from_context(children, index) {
         return Ok(Some(ParsedBlock {
             filename,
             content: content.to_string(),
-            block_type: BlockType::SearchReplaceBlock,
+            block_type,
         }));
     }
 
     Ok(None)
 }
 
-fn parse_full_content_block(content: &str, children: &[Node], index: usize) -> Result<Option<ParsedBlock>, ClipboardError> {
-    // First, check the first line of the code block for the filename
-    if let Some(first_line) = content.lines().next() {
-        let filename_regex = Regex::new(
-            r"^\s*(?://|#)\s*filename:\s*(.+)|^\s*/\*\s*filename:\s*(.+)\s*\*/|^\s*<!--\s*filename:\s*(.+)\s*-->"
-        )?;
+fn extract_block_from_content(
+    content: &str,
+    block_type: &BlockType,
+) -> Result<Option<ParsedBlock>, ClipboardError> {
+    let filename_regex = Regex::new(
+        r"^\s*(?://|#)\s*filename:\s*(.+)|^\s*/\*\s*filename:\s*(.+)\s*\*/|^\s*<!--\s*filename:\s*(.+)\s*-->",
+    )?;
 
+    if let Some(first_line) = content.lines().next() {
         if let Some(caps) = filename_regex.captures(first_line) {
             let filename = caps
                 .get(1)
@@ -160,18 +142,9 @@ fn parse_full_content_block(content: &str, children: &[Node], index: usize) -> R
             return Ok(Some(ParsedBlock {
                 filename,
                 content: code_content,
-                block_type: BlockType::FullContent,
+                block_type: block_type.clone(),
             }));
         }
-    }
-
-    // If no filename found in the first line, check the context
-    if let Some(filename) = extract_filename_from_context(children, index) {
-        return Ok(Some(ParsedBlock {
-            filename,
-            content: content.to_string(),
-            block_type: BlockType::FullContent,
-        }));
     }
 
     Ok(None)

@@ -1,6 +1,6 @@
-use tracing::debug;
-use snippy::extractor::{BlockType, Extractor};
 use snippy::extractor::markdown::MarkdownExtractor;
+use snippy::extractor::{BlockType, Extractor};
+use tracing::debug;
 
 #[tokio::test]
 async fn test_markdown_extractor_simple_filename_as_comment() {

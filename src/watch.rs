@@ -1,6 +1,6 @@
 use crate::applier::{Applier, DiffApplier, FullContentApplier, SearchReplaceApplier};
-use crate::extractor::Extractor;
 use crate::errors::ClipboardError;
+use crate::extractor::Extractor;
 use crate::utils::{read_file_async, write_file_async};
 use arboard::Clipboard;
 use async_trait::async_trait;
@@ -26,8 +26,8 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
     }
 
     pub async fn run(&self) -> Result<(), ClipboardError> {
-        let mut clipboard = Clipboard::new()
-            .map_err(|e| ClipboardError::ClipboardInitError(e.to_string()))?;
+        let mut clipboard =
+            Clipboard::new().map_err(|e| ClipboardError::ClipboardInitError(e.to_string()))?;
         let mut interval = time::interval(Duration::from_millis(self.config.interval_ms));
         let mut last_content = String::new();
 
@@ -73,13 +73,22 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
         Ok(())
     }
 
-    async fn apply_blocks(&self, blocks: Vec<crate::extractor::ParsedBlock>) -> Result<(), ClipboardError> {
+    async fn apply_blocks(
+        &self,
+        blocks: Vec<crate::extractor::ParsedBlock>,
+    ) -> Result<(), ClipboardError> {
         for block in blocks {
             debug!("Applying block: {:?}", block);
             let applier: Box<dyn Applier> = match block.block_type {
-                crate::extractor::BlockType::FullContent => Box::new(FullContentApplier::new(&self.config.watch_path)),
-                crate::extractor::BlockType::UnifiedDiff => Box::new(DiffApplier::new(&self.config.watch_path)),
-                crate::extractor::BlockType::SearchReplaceBlock => Box::new(SearchReplaceApplier::new(&self.config.watch_path)),
+                crate::extractor::BlockType::FullContent => {
+                    Box::new(FullContentApplier::new(&self.config.watch_path))
+                }
+                crate::extractor::BlockType::UnifiedDiff => {
+                    Box::new(DiffApplier::new(&self.config.watch_path))
+                }
+                crate::extractor::BlockType::SearchReplaceBlock => {
+                    Box::new(SearchReplaceApplier::new(&self.config.watch_path))
+                }
             };
 
             if let Err(e) = applier.apply(&block).await {

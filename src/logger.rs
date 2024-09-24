@@ -9,6 +9,5 @@ pub fn initialize_logger() {
         .with_target(false)
         .finish();
 
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Failed to set global logger");
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to set global logger");
 }

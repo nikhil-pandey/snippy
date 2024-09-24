@@ -1,12 +1,12 @@
-use std::path::PathBuf;
 use clap::{Parser, Subcommand};
-use tracing::{error, info};
-use snippy::copy_files_to_clipboard;
-use tracing_subscriber;
 use snippy::copy::ClipboardCopierConfig;
+use snippy::copy_files_to_clipboard;
 use snippy::extractor::markdown::MarkdownExtractor;
 use snippy::logger::initialize_logger;
 use snippy::watch::{ClipboardWatcher, WatcherConfig};
+use std::path::PathBuf;
+use tracing::{error, info};
+use tracing_subscriber;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

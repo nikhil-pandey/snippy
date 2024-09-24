@@ -1,3 +1,4 @@
+use crate::errors::ClipboardError;
 use crate::reporting::print_stats;
 use crate::utils::{expand_patterns, format_content, read_file_content};
 use arboard::Clipboard;
@@ -6,8 +7,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tiktoken_rs::get_bpe_from_model;
 use tracing::{debug, info, trace, warn};
-use crate::errors::ClipboardError;
-
 
 #[derive(Debug, Clone)]
 pub struct ClipboardCopierConfig {
@@ -20,7 +19,6 @@ pub struct ClipboardCopierConfig {
     pub first_line: String,
     pub xml: bool,
 }
-
 
 #[async_trait]
 pub trait ClipboardCopier {
