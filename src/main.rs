@@ -1,5 +1,5 @@
-use clap::{Parser, Subcommand};
 use snippy::copy::ClipboardCopierConfig;
+use clap::{Parser, Subcommand};
 use snippy::copy_files_to_clipboard;
 use snippy::extractor::markdown::MarkdownExtractor;
 use snippy::logger::initialize_logger;

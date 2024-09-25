@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use regex::Regex;
 use std::path::PathBuf;
 use tracing::{debug, error, info};
+use crate::applier::utils::print_diff;
 
 #[derive(Clone)]
 pub struct SearchReplaceApplier {
@@ -17,13 +18,6 @@ impl SearchReplaceApplier {
         SearchReplaceApplier {
             base_path: base_path.clone(),
         }
-    }
-
-    async fn print_diff(&self, file: &str, old: &str, new: &str) -> Result<(), ClipboardError> {
-        let patch = diffy::create_patch(old, new);
-        let f = diffy::PatchFormatter::new().with_color();
-        info!("Diff for file: {}\n{}", file, f.fmt_patch(&patch));
-        Ok(())
     }
 }
 
@@ -100,13 +94,11 @@ impl Applier for SearchReplaceApplier {
             info!("Applied search-replace to {}", path.display());
         }
 
-        self.print_diff(
+        print_diff(
             &path.display().to_string(),
             &original_content,
             &current_content,
-        )
-        .await?;
-
+        );
         Ok(())
     }
 }

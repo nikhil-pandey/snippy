@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use diffy::Patch;
 use std::path::PathBuf;
 use tracing::{debug, info};
+use crate::applier::utils::print_diff;
 
 pub struct DiffApplier {
     base_path: PathBuf,
@@ -25,12 +26,17 @@ impl Applier for DiffApplier {
         let file_path = self.base_path.join(&block.filename);
         debug!("Applying diff to file: {:?}", file_path);
 
-        let current_content = read_file_async(&file_path).await.unwrap_or_default();
-        let new_content = apply_diff(&file_path, &current_content, &block.content).await?;
+        let original_content = read_file_async(&file_path).await.unwrap_or_default();
+        let new_content = apply_diff(&file_path, &original_content, &block.content).await?;
 
         write_file_async(&file_path, &new_content).await?;
 
         info!("Applied diff to {:?}", file_path);
+        print_diff(
+            &block.filename,
+            &original_content,
+            &block.content,
+        );
         Ok(())
     }
 }
