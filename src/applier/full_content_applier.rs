@@ -25,7 +25,8 @@ impl Applier for FullContentApplier {
     async fn apply(&self, block: &ParsedBlock) -> Result<(), ClipboardError> {
         let file_path = self.base_path.join(&block.filename);
         debug!("Applying full content to file: {:?}", file_path);
-        let original_content = read_file_async(&file_path).await?;
+        let original_content = read_file_async(&file_path).await
+            .unwrap_or_default();
         write_file_async(&file_path, &block.content).await?;
         print_diff(
             &block.filename,
