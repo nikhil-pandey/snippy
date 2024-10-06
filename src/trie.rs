@@ -1,4 +1,4 @@
-use crate::ClipboardError;
+use crate::errors::ClipboardError;
 use std::collections::HashMap;
 use std::path::Path;
 use tracing::{debug, trace};

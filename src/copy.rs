@@ -1,12 +1,24 @@
+use crate::errors::ClipboardError;
 use crate::reporting::print_stats;
 use crate::utils::{expand_patterns, format_content, read_file_content};
-use crate::{ClipboardCopierConfig, ClipboardError};
 use arboard::Clipboard;
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tiktoken_rs::get_bpe_from_model;
 use tracing::{debug, info, trace, warn};
+
+#[derive(Debug, Clone)]
+pub struct ClipboardCopierConfig {
+    pub no_markdown: bool,
+    pub line_number: Option<usize>,
+    pub prefix: String,
+    pub model: String,
+    pub no_stats: bool,
+    pub filename_format: String,
+    pub first_line: String,
+    pub xml: bool,
+}
 
 #[async_trait]
 pub trait ClipboardCopier {
@@ -29,7 +41,7 @@ impl ClipboardCopier for BasicClipboardCopier {
         let copier_config = &self.config;
         debug!("Expanding file patterns");
         let file_list =
-            expand_patterns(&files).map_err(|e| ClipboardError::FileReadError(e.to_string()))?;
+            expand_patterns(&files).map_err(|e| ClipboardError::IoError(e.to_string()))?;
 
         debug!("Initializing clipboard");
         let mut clipboard =
@@ -38,7 +50,7 @@ impl ClipboardCopier for BasicClipboardCopier {
         let mut all_content = String::new();
 
         let tokenizer = get_bpe_from_model(&copier_config.model)
-            .map_err(|e| ClipboardError::TokenizerModelError(e.to_string()))?;
+            .map_err(|e| ClipboardError::TokenizerError(e.to_string()))?;
         let mut token_counts: HashMap<PathBuf, usize> = HashMap::new();
 
         // If XML formatting is enabled, wrap all file contents within a root XML element

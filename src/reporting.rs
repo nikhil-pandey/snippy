@@ -1,5 +1,5 @@
+use crate::errors::ClipboardError;
 use crate::trie::{Trie, TrieNode};
-use crate::ClipboardError;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, trace};
@@ -41,7 +41,7 @@ fn print_tree(node: &TrieNode, prefix: &str, is_last: bool) -> Result<(), Clipbo
                 prefix,
                 connector,
                 get_file_icon(&Path::new(name))
-                    .map_err(|e| ClipboardError::FileReadError(e.to_string()))?,
+                    .map_err(|e| ClipboardError::IoError(e.to_string()))?,
                 name,
                 child.token_count.unwrap()
             );
