@@ -1,3 +1,4 @@
+use crate::applier::utils::print_diff;
 use crate::applier::Applier;
 use crate::errors::ClipboardError;
 use crate::extractor::ParsedBlock;
@@ -6,7 +7,6 @@ use async_trait::async_trait;
 use diffy::Patch;
 use std::path::PathBuf;
 use tracing::{debug, info};
-use crate::applier::utils::print_diff;
 
 pub struct DiffApplier {
     base_path: PathBuf,
@@ -32,11 +32,7 @@ impl Applier for DiffApplier {
         write_file_async(&file_path, &new_content).await?;
 
         info!("Applied diff to {:?}", file_path);
-        print_diff(
-            &block.filename,
-            &original_content,
-            &block.content,
-        );
+        print_diff(&block.filename, &original_content, &block.content);
         Ok(())
     }
 }

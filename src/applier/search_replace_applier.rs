@@ -1,3 +1,4 @@
+use crate::applier::utils::print_diff;
 use crate::applier::Applier;
 use crate::errors::ClipboardError;
 use crate::extractor::ParsedBlock;
@@ -6,7 +7,6 @@ use async_trait::async_trait;
 use regex::Regex;
 use std::path::PathBuf;
 use tracing::{debug, error, info};
-use crate::applier::utils::print_diff;
 
 #[derive(Clone)]
 pub struct SearchReplaceApplier {

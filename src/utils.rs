@@ -4,9 +4,11 @@ use std::path::PathBuf;
 use tokio::fs as async_fs;
 use tracing::warn;
 
-pub fn normalize_path(path: &str) -> String {
-    let path = Path::new(path);
-    let normalized_path = if path.is_relative() && path.starts_with("./") {
+pub fn normalize_path(path_str: &str) -> String {
+    let path = Path::new(path_str);
+    let normalized_path = if path_str.eq(".") {
+        "**/*".into()
+    } else if path.is_relative() && path.starts_with("./") {
         path.strip_prefix("./").unwrap().to_owned()
     } else {
         path.to_owned()

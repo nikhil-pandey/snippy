@@ -4,7 +4,7 @@ use crate::utils::{expand_patterns, format_content, read_file_content};
 use arboard::Clipboard;
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tiktoken_rs::get_bpe_from_model;
 use tracing::{debug, info, trace, warn};
 
@@ -121,8 +121,71 @@ impl ClipboardCopier for BasicClipboardCopier {
 
 pub async fn copy_files_to_clipboard(
     config: ClipboardCopierConfig,
-    files: Vec<String>,
+    mut files: Vec<String>,
 ) -> Result<(), ClipboardError> {
+    // Start by checking if the first argument is a git URL
+    let mut temp_dir: Option<tempfile::TempDir> = None;
+
+    if let Some(first_file) = files.get(0) {
+        if is_git_url(first_file) {
+            let git_url = first_file.clone();
+            // Remove the git URL from the files list
+            files.remove(0);
+
+            if files.is_empty() {
+                return Err(ClipboardError::CloneError(
+                    "No file paths specified after git URL".to_string(),
+                ));
+            }
+
+            // Clone the repository to a temporary directory
+            let tmp_dir =
+                tempfile::tempdir().map_err(|e| ClipboardError::IoError(e.to_string()))?;
+
+            use tokio::process::Command;
+
+            info!("Cloning repository from {}", &git_url);
+
+            let status = Command::new("git")
+                .arg("clone")
+                .arg("--depth")
+                .arg("1")
+                .arg(&git_url)
+                .arg(tmp_dir.path())
+                .status()
+                .await
+                .map_err(|e| ClipboardError::CloneError(e.to_string()))?;
+
+            if !status.success() {
+                return Err(ClipboardError::CloneError(format!(
+                    "Failed to clone repository from {}",
+                    &git_url
+                )));
+            }
+
+            // Update file paths to include the temporary directory
+            let temp_dir_path = tmp_dir.path().to_path_buf();
+            files = files
+                .iter()
+                .map(|f| {
+                    let mut p = temp_dir_path.clone();
+                    p.push(f);
+                    p.to_string_lossy().into_owned()
+                })
+                .collect();
+            debug!("Updated file paths: {:?}", files);
+
+            temp_dir = Some(tmp_dir);
+        }
+    }
+
     let copier = BasicClipboardCopier::new(config);
     copier.copy_files_to_clipboard(files).await
+}
+
+fn is_git_url(url: &str) -> bool {
+    url.starts_with("git@")
+        || url.starts_with("https://")
+        || url.starts_with("git://")
+        || url.starts_with("ssh://")
 }
