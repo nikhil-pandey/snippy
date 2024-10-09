@@ -4,7 +4,8 @@ use crate::utils::{expand_patterns, format_content, read_file_content};
 use arboard::Clipboard;
 use async_trait::async_trait;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
+use tempfile::TempDir;
 use tiktoken_rs::get_bpe_from_model;
 use tracing::{debug, info, trace, warn};
 
@@ -27,11 +28,13 @@ pub trait ClipboardCopier {
 
 pub struct BasicClipboardCopier {
     config: ClipboardCopierConfig,
+    base_path: String,
+    temp_dir: Option<TempDir>,
 }
 
 impl BasicClipboardCopier {
-    pub fn new(config: ClipboardCopierConfig) -> Self {
-        BasicClipboardCopier { config }
+    pub fn new(config: ClipboardCopierConfig, base_path: String, temp_dir: Option<TempDir>) -> Self {
+        BasicClipboardCopier { config, base_path, temp_dir }
     }
 }
 
@@ -42,6 +45,7 @@ impl ClipboardCopier for BasicClipboardCopier {
         debug!("Expanding file patterns");
         let file_list =
             expand_patterns(&files).map_err(|e| ClipboardError::IoError(e.to_string()))?;
+        debug!("Expanded file list: {:?}", file_list);
 
         debug!("Initializing clipboard");
         let mut clipboard =
@@ -62,10 +66,12 @@ impl ClipboardCopier for BasicClipboardCopier {
             debug!("Processing file: {}", file);
             match read_file_content(&file).await {
                 Ok(content) => {
+                    let mut relative_path = file.strip_prefix(&self.base_path).unwrap_or(&file);
+                    relative_path = relative_path.strip_prefix("/").unwrap_or(relative_path);
                     debug!("Read content for file: {}", file);
                     let formatted_content = format_content(
                         &content,
-                        &file,
+                        &relative_path,
                         copier_config.no_markdown,
                         copier_config.line_number,
                         &copier_config.prefix,
@@ -84,7 +90,7 @@ impl ClipboardCopier for BasicClipboardCopier {
                         trace!("Encoding content to get token count for file: {}", file);
                         let tokens = tokenizer.encode_ordinary(&formatted_content);
                         let token_count = tokens.len();
-                        token_counts.insert(PathBuf::from(&file), token_count);
+                        token_counts.insert(PathBuf::from(&relative_path), token_count);
                         trace!("File {} has {} tokens", &file, token_count);
                     }
                 }
@@ -123,8 +129,16 @@ pub async fn copy_files_to_clipboard(
     config: ClipboardCopierConfig,
     mut files: Vec<String>,
 ) -> Result<(), ClipboardError> {
-    // Start by checking if the first argument is a git URL
     let mut temp_dir: Option<tempfile::TempDir> = None;
+    let mut base_path = std::env::current_dir()
+        .map_err(|e| ClipboardError::IoError(e.to_string()))?
+        .to_str()
+        .unwrap()
+        .into();
+
+    if files.is_empty() {
+        files.push("".to_string());
+    }
 
     if let Some(first_file) = files.get(0) {
         if is_git_url(first_file) {
@@ -133,9 +147,7 @@ pub async fn copy_files_to_clipboard(
             files.remove(0);
 
             if files.is_empty() {
-                return Err(ClipboardError::CloneError(
-                    "No file paths specified after git URL".to_string(),
-                ));
+                files.push("".to_string());
             }
 
             // Clone the repository to a temporary directory
@@ -175,11 +187,12 @@ pub async fn copy_files_to_clipboard(
                 .collect();
             debug!("Updated file paths: {:?}", files);
 
+            base_path = tmp_dir.path().to_str().unwrap().into();
             temp_dir = Some(tmp_dir);
         }
     }
 
-    let copier = BasicClipboardCopier::new(config);
+    let copier = BasicClipboardCopier::new(config, base_path, temp_dir);
     copier.copy_files_to_clipboard(files).await
 }
 

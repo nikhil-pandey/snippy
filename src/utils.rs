@@ -2,7 +2,7 @@ use crate::errors::ClipboardError;
 use std::path::Path;
 use std::path::PathBuf;
 use tokio::fs as async_fs;
-use tracing::warn;
+use tracing::{debug, warn};
 
 pub fn normalize_path(path_str: &str) -> String {
     let path = Path::new(path_str);
