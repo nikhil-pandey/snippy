@@ -2,8 +2,9 @@ use crate::errors::ClipboardError;
 use std::path::Path;
 use std::path::PathBuf;
 use tokio::fs as async_fs;
-use tracing::{debug, warn};
+use tracing::{warn};
 
+/// Normalize the input path string.
 pub fn normalize_path(path_str: &str) -> String {
     let path = Path::new(path_str);
     let normalized_path = if path_str.eq(".") {
@@ -17,8 +18,38 @@ pub fn normalize_path(path_str: &str) -> String {
     normalized_path.to_string_lossy().replace("\\", "/")
 }
 
-pub fn expand_patterns(patterns: &[String]) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+/// Check if a path contains any of the skipped directories.
+fn is_path_skipped(path: &Path, skip_dirs: &[&str]) -> bool {
+    for component in path.components() {
+        if let std::path::Component::Normal(os_str) = component {
+            if let Some(dir_name) = os_str.to_str() {
+                if skip_dirs.contains(&dir_name) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Expand file patterns while skipping specified directories.
+pub fn expand_patterns(patterns: &[String]) -> Result<Vec<String>, ClipboardError> {
     let mut files = Vec::new();
+
+    // Define directories to skip
+    // TODO: Make this configurable
+    let skip_dirs = vec![
+        ".git",
+        "node_modules",
+        "target",
+        "dist",
+        "build",
+        "__pycache__",
+        "venv",
+        "obj",
+        "bin",
+    ];
+
     for pattern in patterns {
         let normalized_pattern = normalize_path(pattern);
         let path = Path::new(&normalized_pattern);
@@ -26,6 +57,13 @@ pub fn expand_patterns(patterns: &[String]) -> Result<Vec<String>, Box<dyn std::
         if path.is_dir() {
             for entry in walkdir::WalkDir::new(path)
                 .into_iter()
+                .filter_entry(|e| {
+                    let file_name = e.file_name().to_string_lossy();
+                    if e.file_type().is_dir() && skip_dirs.contains(&file_name.as_ref()) {
+                        return false;
+                    }
+                    true
+                })
                 .filter_map(|e| e.ok())
             {
                 if entry.file_type().is_file() {
@@ -33,15 +71,23 @@ pub fn expand_patterns(patterns: &[String]) -> Result<Vec<String>, Box<dyn std::
                 }
             }
         } else {
-            for entry in glob::glob(&normalized_pattern)? {
+            for entry in glob::glob(&normalized_pattern)
+                .map_err(|e| ClipboardError::IoError(e.to_string()))?
+            {
                 match entry {
-                    Ok(path) if path.is_file() => files.push(path.to_string_lossy().to_string()),
+                    Ok(path) => {
+                        if path.is_file() {
+                            if !is_path_skipped(&path, &skip_dirs) {
+                                files.push(path.to_string_lossy().to_string());
+                            }
+                        }
+                    }
                     Err(e) => warn!("Error processing pattern {}: {:?}", pattern, e),
-                    _ => {}
                 }
             }
         }
     }
+
     Ok(files)
 }
 
