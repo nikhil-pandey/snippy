@@ -28,6 +28,9 @@ pub enum ClipboardError {
 
     #[error("Tokenizer Error: {0}")]
     TokenizerError(String),
+
+    #[error("Git Clone Error: {0}")]
+    CloneError(String),
 }
 
 impl From<std::io::Error> for ClipboardError {

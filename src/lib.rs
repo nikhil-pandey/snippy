@@ -9,4 +9,3 @@ pub mod utils;
 pub mod watch;
 
 pub use copy::copy_files_to_clipboard;
-
