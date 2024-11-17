@@ -63,8 +63,14 @@ impl ClipboardCopier for BasicClipboardCopier {
             all_content.push_str("<files>\n");
         }
 
+        let folders_or_files_to_ignore = vec!["target/", "node_modules/", ".git/", "obj/", "bin/", "Debug/"];
+
         for file in file_list {
             debug!("Processing file: {}", file);
+            if folders_or_files_to_ignore.iter().any(|folder| file.replace("\\", "/").contains(folder)) {
+                debug!("Skipping file: {}", file);
+                continue;
+            }
             match read_file_content(&file).await {
                 Ok(content) => {
                     let mut relative_path = file.strip_prefix(&self.base_path).unwrap_or(&file);
