@@ -7,5 +7,6 @@ pub mod reporting;
 pub mod trie;
 pub mod utils;
 pub mod watch;
+pub mod llm;
 
 pub use copy::copy_files_to_clipboard;
