@@ -61,6 +61,7 @@ pub struct WatcherConfig {
     pub predictions_enabled: bool,
     pub store_enabled: bool,
     pub metadata: HashMap<String, String>,
+    pub one_shot: bool,
 }
 
 impl Default for WatcherConfig {
@@ -79,6 +80,7 @@ impl Default for WatcherConfig {
                 m.insert("tool".to_string(), "snippy".to_string());
                 m
             },
+            one_shot: false,
         }
     }
 }

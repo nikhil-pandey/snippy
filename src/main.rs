@@ -63,6 +63,8 @@ struct WatchArgs {
     pub store: bool,
     #[arg(long = "metadata", help = "Additional metadata key-value pairs (format: key=value, e.g., --metadata project=snippy --metadata env=dev)")]
     pub metadata: Option<Vec<String>>,
+    #[arg(long, help = "Run once and exit instead of watching continuously")]
+    pub once: bool,
 }
 
 #[tokio::main]
