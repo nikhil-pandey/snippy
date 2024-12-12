@@ -54,6 +54,8 @@ struct WatchArgs {
     pub ai: bool,
     #[arg(long, default_value = "gpt-4o-mini")]
     pub model: String,
+    #[arg(long = "ignore", help = "Patterns to ignore (e.g., 'target/**', '**/*.pyc')")]
+    pub ignore_patterns: Option<Vec<String>>,
 }
 
 #[tokio::main]
@@ -83,13 +85,15 @@ async fn main() {
         SubCommands::Watch(args) => {
             info!("Starting Clipboard Watcher");
 
-            let watcher_config = WatcherConfig {
-                interval_ms: args.interval_ms,
-                watch_path: PathBuf::from(args.watch_path.unwrap_or_else(|| ".".to_owned())),
-                first_line_identifier: args.first_line,
-                ai_enabled: args.ai,
-                model: args.model,
-            };
+            let mut watcher_config = WatcherConfig::default();
+            watcher_config.interval_ms = args.interval_ms;
+            watcher_config.watch_path = PathBuf::from(args.watch_path.unwrap_or_else(|| ".".to_owned()));
+            watcher_config.first_line_identifier = args.first_line;
+            watcher_config.ai_enabled = args.ai;
+            watcher_config.model = args.model;
+            if let Some(patterns) = args.ignore_patterns {
+                watcher_config.ignore_patterns = patterns;
+            }
 
             let mut watcher = ClipboardWatcher::new(watcher_config, MarkdownExtractor::new());
 

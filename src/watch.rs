@@ -1,6 +1,8 @@
 use crate::applier::{Applier, DiffApplier, FullContentApplier, SearchReplaceApplier};
 use crate::errors::ClipboardError;
 use crate::extractor::Extractor;
+use crate::llm::{LLMClient, TokenUsage};
+use crate::applier::utils::print_diff;
 use arboard::Clipboard;
 use std::path::PathBuf;
 use tokio::signal;
@@ -8,12 +10,25 @@ use tokio::time::{self, Duration};
 use tracing::{debug, error, info, trace, warn};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use reqwest::Client;
-use std::env;
 use std::collections::VecDeque;
 use walkdir::WalkDir;
+use std::time::Instant;
+use glob::Pattern;
 
 const MAX_HISTORY_SIZE: usize = 10;
+const DEFAULT_IGNORE_PATTERNS: &[&str] = &[
+    "target/**",
+    "node_modules/**",
+    ".git/**",
+    "**/*.pyc",
+    "**/__pycache__/**",
+    ".DS_Store",
+    "Cargo.lock",
+    "package-lock.json",
+    "yarn.lock",
+    "dist/**",
+    "build/**",
+];
 
 #[derive(Debug, Serialize, Deserialize)]
 struct AIResponse {
@@ -27,27 +42,68 @@ struct FileHistory {
     timestamp: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Debug)]
+struct ProcessingStats {
+    file_path: String,
+    processing_time: Duration,
+    token_usage: TokenUsage,
+}
+
 pub struct WatcherConfig {
     pub watch_path: PathBuf,
     pub interval_ms: u64,
     pub first_line_identifier: String,
     pub ai_enabled: bool,
     pub model: String,
+    pub ignore_patterns: Vec<String>,
+}
+
+impl Default for WatcherConfig {
+    fn default() -> Self {
+        Self {
+            watch_path: PathBuf::from("."),
+            interval_ms: 1000,
+            first_line_identifier: "# Relevant Code".to_string(),
+            ai_enabled: false,
+            model: "gpt-4o-mini".to_string(),
+            ignore_patterns: DEFAULT_IGNORE_PATTERNS.iter().map(|s| s.to_string()).collect(),
+        }
+    }
 }
 
 pub struct ClipboardWatcher<E: Extractor + Send + Sync> {
     config: WatcherConfig,
     extractor: E,
     modified_files: VecDeque<FileHistory>,
+    llm_client: LLMClient,
+    total_token_usage: TokenUsage,
+    ignore_patterns: Vec<Pattern>,
 }
 
 impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
     pub fn new(config: WatcherConfig, extractor: E) -> Self {
+        let ignore_patterns = config.ignore_patterns.iter()
+            .filter_map(|p| match Pattern::new(p) {
+                Ok(pattern) => Some(pattern),
+                Err(e) => {
+                    warn!("Invalid ignore pattern '{}': {}", p, e);
+                    None
+                }
+            })
+            .collect();
+
         ClipboardWatcher { 
+            llm_client: LLMClient::new(config.model.clone()),
             config, 
             extractor,
             modified_files: VecDeque::with_capacity(MAX_HISTORY_SIZE),
+            total_token_usage: TokenUsage::default(),
+            ignore_patterns,
         }
+    }
+
+    fn should_ignore(&self, path: &str) -> bool {
+        self.ignore_patterns.iter().any(|pattern| pattern.matches(path))
     }
 
     fn add_to_history(&mut self, file_path: String) {
@@ -60,13 +116,23 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
         });
     }
 
+    fn update_token_usage(&mut self, usage: TokenUsage) {
+        self.total_token_usage = self.total_token_usage + usage;
+    }
+
     fn get_directory_tree(&self) -> Result<String, ClipboardError> {
         let mut tree = String::new();
         for entry in WalkDir::new(&self.config.watch_path)
             .min_depth(1)
             .max_depth(3)
             .into_iter()
-            .filter_entry(|e| !e.file_name().to_str().map_or(false, |s| s.starts_with('.'))) {
+            .filter_entry(|e| {
+                !e.file_name().to_str().map_or(false, |s| s.starts_with('.')) && 
+                !e.path().strip_prefix(&self.config.watch_path)
+                    .ok()
+                    .and_then(|p| p.to_str())
+                    .map_or(false, |p| self.should_ignore(p))
+            }) {
                 match entry {
                     Ok(entry) => {
                         let path = entry.path().strip_prefix(&self.config.watch_path).unwrap_or(entry.path());
@@ -81,21 +147,16 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
     }
 
     async fn process_with_ai(&mut self, content: &str) -> Result<(), ClipboardError> {
-        let api_key = env::var("OPENAI_API_KEY")
-            .map_err(|_| ClipboardError::ConfigError("OPENAI_API_KEY not set".to_string()))?;
+        let start_time = Instant::now();
+        let mut processing_stats = Vec::new();
         
-        let client = Client::new();
-        
-        // Get current directory structure
         let dir_tree = self.get_directory_tree()?;
         
-        // Format recent file history
         let recent_files = self.modified_files.iter()
             .map(|f| format!("{} (modified at {})", f.path, f.timestamp.format("%Y-%m-%d %H:%M:%S")))
             .collect::<Vec<_>>()
             .join("\n");
 
-        // First call to check if content contains code blocks
         let check_prompt = format!(
             r#"Analyze the following content and determine if it contains code blocks or changes that need to be applied to files.
             
@@ -109,6 +170,7 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
             1. All file paths in your response MUST be relative to the current directory
             2. Only include files that need to be modified
             3. Make sure the files exist in the directory structure shown above
+            4. Ignore the following patterns: {}
 
             Respond in the following JSON format:
             {{
@@ -116,62 +178,39 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                 "files": ["relative/path/to/file1.rs", "relative/path/to/file2.rs"]
             }}
             
-            Example input:
-            ```rust
-            fn main() {{
-                println!("Hello");
-            }}
-            ```
-            
-            Example output:
-            {{
-                "contains_code": true,
-                "files": ["src/main.rs"]
-            }}
-            
             Content to analyze:
             {}
             "#, 
             dir_tree,
             if recent_files.is_empty() { "No recently modified files" } else { &recent_files },
+            self.config.ignore_patterns.join(", "),
             content
         );
 
-        info!("Sending content to OpenAI for analysis");
-        let response = client
-            .post("https://api.openai.com/v1/chat/completions")
-            .header("Authorization", format!("Bearer {}", api_key))
-            .json(&serde_json::json!({
-                "model": self.config.model,
-                "messages": [{
-                    "role": "user",
-                    "content": check_prompt
-                }],
-                "response_format": { "type": "json_object" }
-            }))
-            .send()
-            .await
-            .map_err(|e| ClipboardError::AIError(format!("Failed to send request: {}", e)))?;
-
-        let ai_response: serde_json::Value = response.json().await
-            .map_err(|e| ClipboardError::AIError(format!("Failed to parse response: {}", e)))?;
-
-        let content_str = ai_response["choices"][0]["message"]["content"]
-            .as_str()
-            .ok_or_else(|| ClipboardError::AIError("Invalid AI response format".to_string()))?;
-
-        let parsed_response: AIResponse = serde_json::from_str(content_str)
-            .map_err(|e| ClipboardError::AIError(format!("Failed to parse AI response JSON: {}", e)))?;
+        info!("Analyzing content with AI");
+        let (parsed_response, usage) = self.llm_client.call_with_json_response::<AIResponse>(&check_prompt).await?;
+        self.update_token_usage(usage);
 
         if !parsed_response.contains_code {
             info!("No code changes detected by AI");
             return Ok(());
         }
 
-        info!("Processing {} files: {:?}", parsed_response.files.len(), parsed_response.files);
+        // Filter out ignored files
+        let files: Vec<_> = parsed_response.files.into_iter()
+            .filter(|f| !self.should_ignore(f))
+            .collect();
+
+        if files.is_empty() {
+            info!("All detected files are in ignored paths");
+            return Ok(());
+        }
+
+        info!("Processing {} files: {:?}", files.len(), files);
 
         // Process each file
-        for file_path in parsed_response.files {
+        for file_path in files {
+            let file_start_time = Instant::now();
             let full_path = self.config.watch_path.join(&file_path);
             debug!("Processing file: {:?}", full_path);
 
@@ -198,40 +237,36 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
             );
 
             info!("Generating updated content for {}", file_path);
-            let response = client
-                .post("https://api.openai.com/v1/chat/completions")
-                .header("Authorization", format!("Bearer {}", api_key))
-                .json(&serde_json::json!({
-                    "model": self.config.model,
-                    "messages": [{
-                        "role": "user",
-                        "content": update_prompt
-                    }]
-                }))
-                .send()
-                .await
-                .map_err(|e| ClipboardError::AIError(format!("Failed to send request for {}: {}", file_path, e)))?;
+            let response = self.llm_client.call(&update_prompt).await?;
+            self.update_token_usage(response.usage);
 
-            let ai_response: serde_json::Value = response.json().await
-                .map_err(|e| ClipboardError::AIError(format!("Failed to parse response for {}: {}", file_path, e)))?;
-
-            let new_content = ai_response["choices"][0]["message"]["content"]
-                .as_str()
-                .ok_or_else(|| ClipboardError::AIError(format!("Invalid AI response format for {}", file_path)))?;
-
-            // Create a backup of the original file
-            let backup_path = full_path.with_extension("bak");
-            fs::copy(&full_path, &backup_path)
-                .map_err(|e| ClipboardError::FileError(format!("Failed to create backup of {}: {}", file_path, e)))?;
+            // Print diff before applying changes
+            print_diff(&file_path, &current_content, &response.content);
 
             // Write the new content
-            fs::write(&full_path, new_content)
+            fs::write(&full_path, &response.content)
                 .map_err(|e| ClipboardError::FileError(format!("Failed to write to {}: {}", file_path, e)))?;
 
-            // Add to history
+            // Add to history and stats
             self.add_to_history(file_path.clone());
+            processing_stats.push(ProcessingStats {
+                file_path,
+                processing_time: file_start_time.elapsed(),
+                token_usage: response.usage,
+            });
+        }
 
-            info!("Updated file: {} (backup created at {:?})", file_path, backup_path);
+        // Print final stats
+        info!("Processing completed in {:?}", start_time.elapsed());
+        info!("Files processed:");
+        for stats in processing_stats {
+            info!("  {} (took {:?}, tokens: prompt={}, completion={}, total={})",
+                stats.file_path,
+                stats.processing_time,
+                stats.token_usage.prompt_tokens,
+                stats.token_usage.completion_tokens,
+                stats.token_usage.total_tokens
+            );
         }
 
         Ok(())
@@ -248,6 +283,8 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
         if self.config.ai_enabled {
             info!("Using OpenAI model: {}", self.config.model);
         }
+
+        let start_time = Instant::now();
 
         loop {
             tokio::select! {
@@ -290,6 +327,12 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                 },
                 _ = signal::ctrl_c() => {
                     info!("Received Ctrl+C, terminating clipboard watcher.");
+                    info!("Total runtime: {:?}", start_time.elapsed());
+                    info!("Total token usage: prompt={}, completion={}, total={}", 
+                        self.total_token_usage.prompt_tokens,
+                        self.total_token_usage.completion_tokens,
+                        self.total_token_usage.total_tokens
+                    );
                     break;
                 }
             }
@@ -299,6 +342,9 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
     }
 
     async fn process_standard(&mut self, content: &str) -> Result<(), ClipboardError> {
+        let start_time = Instant::now();
+        let mut files_processed = Vec::new();
+
         match self.extractor.extract(content) {
             Ok(blocks) => {
                 for block in blocks {
@@ -315,14 +361,23 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                         }
                     };
 
+                    let file_start_time = Instant::now();
                     if let Err(e) = applier.apply(&block).await {
                         error!("Failed to apply block: {}", e);
                         return Err(ClipboardError::ContentApplicationError(e.to_string()));
                     } else {
                         info!("Successfully applied block to {}", block.filename);
                         self.add_to_history(block.filename.clone());
+                        files_processed.push((block.filename, file_start_time.elapsed()));
                     }
                 }
+
+                info!("Standard processing completed in {:?}", start_time.elapsed());
+                info!("Files processed:");
+                for (file, duration) in files_processed {
+                    info!("  {} (took {:?})", file, duration);
+                }
+
                 Ok(())
             },
             Err(e) => Err(ClipboardError::ContentExtractionError(e.to_string()))
