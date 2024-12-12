@@ -31,6 +31,15 @@ pub enum ClipboardError {
 
     #[error("Git Clone Error: {0}")]
     CloneError(String),
+
+    #[error("File operation error: {0}")]
+    FileError(String),
+
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+
+    #[error("AI processing error: {0}")]
+    AIError(String),
 }
 
 impl From<std::io::Error> for ClipboardError {

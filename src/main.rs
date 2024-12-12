@@ -50,6 +50,10 @@ struct WatchArgs {
     interval_ms: u64,
     #[arg(long, default_value = "# Relevant Code")]
     pub first_line: String,
+    #[arg(long)]
+    pub ai: bool,
+    #[arg(long, default_value = "gpt-4o-mini")]
+    pub model: String,
 }
 
 #[tokio::main]
@@ -83,9 +87,11 @@ async fn main() {
                 interval_ms: args.interval_ms,
                 watch_path: PathBuf::from(args.watch_path.unwrap_or_else(|| ".".to_owned())),
                 first_line_identifier: args.first_line,
+                ai_enabled: args.ai,
+                model: args.model,
             };
 
-            let watcher = ClipboardWatcher::new(watcher_config, MarkdownExtractor::new());
+            let mut watcher = ClipboardWatcher::new(watcher_config, MarkdownExtractor::new());
 
             if let Err(e) = watcher.run().await {
                 error!("Clipboard watcher terminated with error: {}", e);
