@@ -40,6 +40,9 @@ pub enum ClipboardError {
 
     #[error("AI processing error: {0}")]
     AIError(String),
+
+    #[error("Operation cancelled: {0}")]
+    Cancelled(String),
 }
 
 impl From<std::io::Error> for ClipboardError {

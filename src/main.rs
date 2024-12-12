@@ -5,7 +5,8 @@ use snippy::extractor::markdown::MarkdownExtractor;
 use snippy::logger::initialize_logger;
 use snippy::watch::{ClipboardWatcher, WatcherConfig};
 use std::path::PathBuf;
-use tracing::{error, info};
+use std::collections::HashMap;
+use tracing::{error, info, warn};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -56,6 +57,12 @@ struct WatchArgs {
     pub model: String,
     #[arg(long = "ignore", help = "Patterns to ignore (e.g., 'target/**', '**/*.pyc')")]
     pub ignore_patterns: Option<Vec<String>>,
+    #[arg(long, help = "Enable predictions for faster responses when files exist")]
+    pub predictions: bool,
+    #[arg(long, help = "Store data in OpenAI for future use")]
+    pub store: bool,
+    #[arg(long = "metadata", help = "Additional metadata key-value pairs (format: key=value, e.g., --metadata project=snippy --metadata env=dev)")]
+    pub metadata: Option<Vec<String>>,
 }
 
 #[tokio::main]
@@ -91,6 +98,30 @@ async fn main() {
             watcher_config.first_line_identifier = args.first_line;
             watcher_config.ai_enabled = args.ai;
             watcher_config.model = args.model;
+            watcher_config.predictions_enabled = args.predictions;
+            watcher_config.store_enabled = args.store;
+            
+            // Parse metadata
+            let mut metadata = HashMap::new();
+            metadata.insert("tool".to_string(), "snippy".to_string());
+            if let Some(meta_args) = args.metadata {
+                for kv in meta_args {
+                    match kv.split_once('=') {
+                        Some((key, value)) => {
+                            if key.trim().is_empty() {
+                                warn!("Ignoring metadata with empty key: {}", kv);
+                            } else if value.trim().is_empty() {
+                                warn!("Ignoring metadata with empty value: {}", kv);
+                            } else {
+                                metadata.insert(key.trim().to_string(), value.trim().to_string());
+                            }
+                        }
+                        None => warn!("Ignoring invalid metadata format (expected key=value): {}", kv),
+                    }
+                }
+            }
+            watcher_config.metadata = metadata;
+
             if let Some(patterns) = args.ignore_patterns {
                 watcher_config.ignore_patterns = patterns;
             }

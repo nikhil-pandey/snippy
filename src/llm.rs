@@ -6,6 +6,9 @@ use tracing::info;
 use std::ops::Add;
 use std::collections::HashMap;
 use once_cell::sync::Lazy;
+use std::time::Instant;
+use tokio::select;
+use tokio::signal;
 
 pub static MODEL_PRICING: Lazy<HashMap<&'static str, ModelPricing>> = Lazy::new(|| {
     let mut m = HashMap::new();
@@ -29,23 +32,6 @@ pub struct ModelPricing {
     pub output_price: f64,   // per 1M tokens
 }
 
-impl ModelPricing {
-    pub fn new(input_price: f64, cached_price: f64, output_price: f64) -> Self {
-        Self {
-            input_price,
-            cached_price,
-            output_price,
-        }
-    }
-
-    pub fn calculate_cost(&self, usage: &TokenUsage) -> f64 {
-        let cached_cost = (usage.prompt_tokens_details.as_ref().map_or(0, |d| d.cached_tokens) as f64 / 1_000_000.0) * self.cached_price;
-        let regular_input_cost = ((usage.prompt_tokens - usage.prompt_tokens_details.as_ref().map_or(0, |d| d.cached_tokens)) as f64 / 1_000_000.0) * self.input_price;
-        let output_cost = (usage.completion_tokens as f64 / 1_000_000.0) * self.output_price;
-        cached_cost + regular_input_cost + output_cost
-    }
-}
-
 #[derive(Debug, Deserialize, Default, Clone, Copy)]
 pub struct PromptTokenDetails {
     pub cached_tokens: u32,
@@ -67,6 +53,30 @@ pub struct TokenUsage {
     pub prompt_tokens_details: Option<PromptTokenDetails>,
     #[serde(default)]
     pub completion_tokens_details: Option<CompletionTokenDetails>,
+}
+
+#[derive(Debug)]
+pub struct LLMResponse {
+    pub content: String,
+    pub usage: TokenUsage,
+    pub response_time: std::time::Duration,
+}
+
+impl ModelPricing {
+    pub fn new(input_price: f64, cached_price: f64, output_price: f64) -> Self {
+        Self {
+            input_price,
+            cached_price,
+            output_price,
+        }
+    }
+
+    pub fn calculate_cost(&self, usage: &TokenUsage) -> f64 {
+        let cached_cost = (usage.prompt_tokens_details.as_ref().map_or(0, |d| d.cached_tokens) as f64 / 1_000_000.0) * self.cached_price;
+        let regular_input_cost = ((usage.prompt_tokens - usage.prompt_tokens_details.as_ref().map_or(0, |d| d.cached_tokens)) as f64 / 1_000_000.0) * self.input_price;
+        let output_cost = (usage.completion_tokens as f64 / 1_000_000.0) * self.output_price;
+        cached_cost + regular_input_cost + output_cost
+    }
 }
 
 impl TokenUsage {
@@ -128,45 +138,78 @@ impl Add for TokenUsage {
     }
 }
 
-#[derive(Debug)]
-pub struct LLMResponse {
-    pub content: String,
-    pub usage: TokenUsage,
-}
-
 pub struct LLMClient {
     client: Client,
     model: String,
+    store_enabled: bool,
+    metadata: HashMap<String, String>,
 }
 
 impl LLMClient {
-    pub fn new(model: String) -> Self {
+    pub fn new(model: String, store_enabled: bool, metadata: HashMap<String, String>) -> Self {
         LLMClient {
             client: Client::new(),
             model,
+            store_enabled,
+            metadata,
         }
     }
 
-    pub async fn call(&self, prompt: &str) -> Result<LLMResponse, ClipboardError> {
+    fn build_request_body(&self, messages: serde_json::Value, prediction: Option<&str>) -> serde_json::Value {
+        let mut body = serde_json::json!({
+            "model": self.model,
+            "messages": messages,
+        });
+
+        if self.store_enabled {
+            body.as_object_mut().unwrap().insert("store".to_string(), serde_json::json!(true));
+            body.as_object_mut().unwrap().insert("metadata".to_string(), serde_json::json!(self.metadata));
+        }
+
+        if let Some(content) = prediction {
+            body.as_object_mut().unwrap().insert("prediction".to_string(), serde_json::json!({
+                "type": "content",
+                "content": content
+            }));
+        }
+
+        body
+    }
+
+    pub async fn call(&self, prompt: &str, prediction: Option<&str>) -> Result<LLMResponse, ClipboardError> {
+        let start_time = Instant::now();
         let api_key = env::var("OPENAI_API_KEY")
             .map_err(|_| ClipboardError::ConfigError("OPENAI_API_KEY not set".to_string()))?;
 
-        let response = self.client
+        let messages = serde_json::json!([{
+            "role": "user",
+            "content": prompt
+        }]);
+
+        let body = self.build_request_body(messages, prediction);
+
+        let request = self.client
             .post("https://api.openai.com/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", api_key))
-            .json(&serde_json::json!({
-                "model": self.model,
-                "messages": [{
-                    "role": "user",
-                    "content": prompt
-                }]
-            }))
-            .send()
-            .await
-            .map_err(|e| ClipboardError::AIError(format!("Failed to send request: {}", e)))?;
+            .json(&body);
 
-        let response_json: serde_json::Value = response.json().await
-            .map_err(|e| ClipboardError::AIError(format!("Failed to parse response: {}", e)))?;
+        let response = select! {
+            response = request.send() => {
+                response.map_err(|e| ClipboardError::AIError(format!("Failed to send request: {}", e)))?
+            }
+            _ = signal::ctrl_c() => {
+                return Err(ClipboardError::Cancelled("Operation cancelled by user".to_string()));
+            }
+        };
+
+        let response_json = select! {
+            json = response.json::<serde_json::Value>() => {
+                json.map_err(|e| ClipboardError::AIError(format!("Failed to parse response: {}", e)))?
+            }
+            _ = signal::ctrl_c() => {
+                return Err(ClipboardError::Cancelled("Operation cancelled by user".to_string()));
+            }
+        };
 
         let content = response_json["choices"][0]["message"]["content"]
             .as_str()
@@ -176,42 +219,52 @@ impl LLMClient {
         let usage: TokenUsage = serde_json::from_value(response_json["usage"].clone())
             .map_err(|e| ClipboardError::AIError(format!("Failed to parse usage data: {}", e)))?;
 
-        info!("Token usage: prompt={}, completion={}, total={}{}", 
-            usage.prompt_tokens, 
-            usage.completion_tokens, 
-            usage.total_tokens,
-            usage.completion_tokens_details.map_or(String::new(), |d| format!(
-                ", details: reasoning={}, accepted={}, rejected={}", 
-                d.reasoning_tokens, 
-                d.accepted_prediction_tokens, 
-                d.rejected_prediction_tokens
-            ))
+        let response_time = start_time.elapsed();
+
+        info!("Token usage: {} (response time: {:?}{})", 
+            usage.format_details(&self.model),
+            response_time,
+            if prediction.is_some() { " [with prediction]" } else { "" }
         );
 
-        Ok(LLMResponse { content, usage })
+        Ok(LLMResponse { content, usage, response_time })
     }
 
-    pub async fn call_with_json_response<T: for<'de> Deserialize<'de>>(&self, prompt: &str) -> Result<(T, TokenUsage), ClipboardError> {
+    pub async fn call_with_json_response<T: for<'de> Deserialize<'de>>(&self, prompt: &str) -> Result<(T, TokenUsage, std::time::Duration), ClipboardError> {
+        let start_time = Instant::now();
         let api_key = env::var("OPENAI_API_KEY")
             .map_err(|_| ClipboardError::ConfigError("OPENAI_API_KEY not set".to_string()))?;
 
-        let response = self.client
+        let messages = serde_json::json!([{
+            "role": "user",
+            "content": prompt
+        }]);
+
+        let mut body = self.build_request_body(messages, None);
+        body.as_object_mut().unwrap().insert("response_format".to_string(), serde_json::json!({ "type": "json_object" }));
+
+        let request = self.client
             .post("https://api.openai.com/v1/chat/completions")
             .header("Authorization", format!("Bearer {}", api_key))
-            .json(&serde_json::json!({
-                "model": self.model,
-                "messages": [{
-                    "role": "user",
-                    "content": prompt
-                }],
-                "response_format": { "type": "json_object" }
-            }))
-            .send()
-            .await
-            .map_err(|e| ClipboardError::AIError(format!("Failed to send request: {}", e)))?;
+            .json(&body);
 
-        let response_json: serde_json::Value = response.json().await
-            .map_err(|e| ClipboardError::AIError(format!("Failed to parse response: {}", e)))?;
+        let response = select! {
+            response = request.send() => {
+                response.map_err(|e| ClipboardError::AIError(format!("Failed to send request: {}", e)))?
+            }
+            _ = signal::ctrl_c() => {
+                return Err(ClipboardError::Cancelled("Operation cancelled by user".to_string()));
+            }
+        };
+
+        let response_json = select! {
+            json = response.json::<serde_json::Value>() => {
+                json.map_err(|e| ClipboardError::AIError(format!("Failed to parse response: {}", e)))?
+            }
+            _ = signal::ctrl_c() => {
+                return Err(ClipboardError::Cancelled("Operation cancelled by user".to_string()));
+            }
+        };
 
         let content = response_json["choices"][0]["message"]["content"]
             .as_str()
@@ -223,18 +276,13 @@ impl LLMClient {
         let usage: TokenUsage = serde_json::from_value(response_json["usage"].clone())
             .map_err(|e| ClipboardError::AIError(format!("Failed to parse usage data: {}", e)))?;
 
-        info!("Token usage: prompt={}, completion={}, total={}{}", 
-            usage.prompt_tokens, 
-            usage.completion_tokens, 
-            usage.total_tokens,
-            usage.completion_tokens_details.map_or(String::new(), |d| format!(
-                ", details: reasoning={}, accepted={}, rejected={}", 
-                d.reasoning_tokens, 
-                d.accepted_prediction_tokens, 
-                d.rejected_prediction_tokens
-            ))
+        let response_time = start_time.elapsed();
+
+        info!("Token usage: {} (response time: {:?})", 
+            usage.format_details(&self.model),
+            response_time
         );
 
-        Ok((parsed, usage))
+        Ok((parsed, usage, response_time))
     }
 } 
