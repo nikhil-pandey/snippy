@@ -1,6 +1,6 @@
 [package]
 name = "snippy"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2021"
 description = "A command-line tool for that makes using LLMs for code generation a breeze"
 authors = ["Nikhil Pandey <nikhil@nikhil.com.np>"]

@@ -102,6 +102,7 @@ async fn main() {
             watcher_config.model = args.model;
             watcher_config.predictions_enabled = args.predictions;
             watcher_config.store_enabled = args.store;
+            watcher_config.one_shot = args.once;
             
             // Parse metadata
             let mut metadata = HashMap::new();

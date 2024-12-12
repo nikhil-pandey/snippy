@@ -357,7 +357,10 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
         let mut interval = time::interval(Duration::from_millis(self.config.interval_ms));
         let mut last_content = String::new();
 
-        info!("Started watching clipboard at {:?}", self.config.watch_path);
+        info!("Started {} clipboard at {:?}", 
+            if self.config.one_shot { "one-shot processing" } else { "watching" },
+            self.config.watch_path
+        );
         info!("AI processing is {}", if self.config.ai_enabled { "enabled" } else { "disabled" });
         if self.config.ai_enabled {
             info!("Using OpenAI model: {} (input=${:.3}/1M, cached=${:.3}/1M, output=${:.3}/1M)", 
@@ -394,25 +397,49 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                                 
                                 if self.config.ai_enabled {
                                     match self.process_with_ai(&content).await {
-                                        Ok(_) => info!("AI processing completed successfully"),
+                                        Ok(_) => {
+                                            info!("AI processing completed successfully");
+                                            if self.config.one_shot {
+                                                info!("One-shot processing completed in {:?}", start_time.elapsed());
+                                                info!("Total token usage: {}", 
+                                                    self.total_token_usage.format_details(&self.config.model)
+                                                );
+                                                return Ok(());
+                                            }
+                                        }
                                         Err(e) => {
                                             error!("AI processing failed: {}", e);
                                             warn!("Falling back to standard processing");
                                             if let Err(e) = self.process_standard(&content).await {
                                                 error!("Standard processing also failed: {}", e);
                                             }
+                                            if self.config.one_shot {
+                                                return Err(e);
+                                            }
                                         }
                                     }
                                 } else {
                                     if let Err(e) = self.process_standard(&content).await {
                                         error!("Failed to process content: {}", e);
+                                        if self.config.one_shot {
+                                            return Err(e);
+                                        }
+                                    } else if self.config.one_shot {
+                                        info!("One-shot processing completed in {:?}", start_time.elapsed());
+                                        return Ok(());
                                     }
                                 }
                                 last_content = content;
+                            } else if self.config.one_shot {
+                                info!("No content to process");
+                                return Ok(());
                             }
                         },
                         Err(e) => {
                             error!("Failed to read clipboard content: {}", e);
+                            if self.config.one_shot {
+                                return Err(ClipboardError::ClipboardReadError(e.to_string()));
+                            }
                         }
                     }
                 },
