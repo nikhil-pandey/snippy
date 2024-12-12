@@ -1,7 +1,7 @@
 use crate::applier::{Applier, DiffApplier, FullContentApplier, SearchReplaceApplier};
 use crate::errors::ClipboardError;
 use crate::extractor::Extractor;
-use crate::llm::{LLMClient, TokenUsage};
+use crate::llm::{LLMClient, TokenUsage, MODEL_PRICING};
 use crate::applier::utils::print_diff;
 use arboard::Clipboard;
 use std::path::PathBuf;
@@ -39,7 +39,6 @@ struct AIResponse {
 #[derive(Debug)]
 struct FileHistory {
     path: String,
-    timestamp: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug)]
@@ -112,7 +111,6 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
         }
         self.modified_files.push_back(FileHistory {
             path: file_path,
-            timestamp: chrono::Utc::now(),
         });
     }
 
@@ -153,7 +151,7 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
         let dir_tree = self.get_directory_tree()?;
         
         let recent_files = self.modified_files.iter()
-            .map(|f| format!("{} (modified at {})", f.path, f.timestamp.format("%Y-%m-%d %H:%M:%S")))
+            .map(|f| f.path.clone())
             .collect::<Vec<_>>()
             .join("\n");
 
@@ -169,8 +167,7 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
             Important Notes:
             1. All file paths in your response MUST be relative to the current directory
             2. Only include files that need to be modified
-            3. Make sure the files exist in the directory structure shown above
-            4. Ignore the following patterns: {}
+            3. Make sure the files exist in the directory structure shown above or will be created as new files
 
             Respond in the following JSON format:
             {{
@@ -183,12 +180,12 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
             "#, 
             dir_tree,
             if recent_files.is_empty() { "No recently modified files" } else { &recent_files },
-            self.config.ignore_patterns.join(", "),
             content
         );
 
         info!("Analyzing content with AI");
         let (parsed_response, usage) = self.llm_client.call_with_json_response::<AIResponse>(&check_prompt).await?;
+        info!("Analysis token usage: {}", usage.format_details(&self.config.model));
         self.update_token_usage(usage);
 
         if !parsed_response.contains_code {
@@ -214,34 +211,57 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
             let full_path = self.config.watch_path.join(&file_path);
             debug!("Processing file: {:?}", full_path);
 
-            let current_content = fs::read_to_string(&full_path)
-                .map_err(|e| ClipboardError::FileError(format!("Failed to read {}: {}", file_path, e)))?;
+            let current_content = if full_path.exists() {
+                fs::read_to_string(&full_path)
+                    .map_err(|e| ClipboardError::FileError(format!("Failed to read {}: {}", file_path, e)))?
+            } else {
+                info!("File {} does not exist, will be created as new", file_path);
+                String::new()
+            };
 
             let update_prompt = format!(
-                r#"Update the following file content based on the provided changes.
+                r#"Update or create the following file based on the provided changes.
                 Important:
                 1. Output ONLY the final content of the file
                 2. No markdown, no backticks, just the content
-                3. Preserve existing comments that are still relevant to the code
-                4. Remove any temporary/instructional comments
-                5. Keep documentation comments that explain functionality
-                6. Maintain consistent code style with the original file
+                3. Think carefully about which comments to preserve:
+                   - Keep meaningful documentation and code explanation comments
+                   - Remove any temporary/instructional comments like "// ... rest of the code ..."
+                   - Remove any comments that were meant to guide you
+                4. When deciding what changes to apply:
+                   - Carefully analyze which parts of the original content should be kept
+                   - Don't remove code that isn't being modified by the changes
+                   - Think about the context and purpose of each section
+                5. Maintain consistent code style with the original file
                 
-                Current file content:
+                File status: {}
+                
+                Current content:
                 {}
                 
                 Changes to apply:
                 {}
                 "#,
-                current_content, content
+                if current_content.is_empty() { "NEW FILE" } else { "EXISTING FILE" },
+                current_content,
+                content
             );
 
             info!("Generating updated content for {}", file_path);
             let response = self.llm_client.call(&update_prompt).await?;
+            info!("Generation token usage: {}", response.usage.format_details(&self.config.model));
             self.update_token_usage(response.usage);
 
             // Print diff before applying changes
             print_diff(&file_path, &current_content, &response.content);
+
+            // Create parent directories if they don't exist
+            if let Some(parent) = full_path.parent() {
+                if !parent.exists() {
+                    fs::create_dir_all(parent)
+                        .map_err(|e| ClipboardError::FileError(format!("Failed to create directories for {}: {}", file_path, e)))?;
+                }
+            }
 
             // Write the new content
             fs::write(&full_path, &response.content)
@@ -260,12 +280,10 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
         info!("Processing completed in {:?}", start_time.elapsed());
         info!("Files processed:");
         for stats in processing_stats {
-            info!("  {} (took {:?}, tokens: prompt={}, completion={}, total={})",
+            info!("  {} (took {:?}, tokens: {})",
                 stats.file_path,
                 stats.processing_time,
-                stats.token_usage.prompt_tokens,
-                stats.token_usage.completion_tokens,
-                stats.token_usage.total_tokens
+                stats.token_usage.format_details(&self.config.model)
             );
         }
 
@@ -281,7 +299,15 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
         info!("Started watching clipboard at {:?}", self.config.watch_path);
         info!("AI processing is {}", if self.config.ai_enabled { "enabled" } else { "disabled" });
         if self.config.ai_enabled {
-            info!("Using OpenAI model: {}", self.config.model);
+            info!("Using OpenAI model: {} (input=${:.3}/1M, cached=${:.3}/1M, output=${:.3}/1M)", 
+                self.config.model,
+                MODEL_PRICING.get(self.config.model.as_str())
+                    .map_or(0.0, |p| p.input_price),
+                MODEL_PRICING.get(self.config.model.as_str())
+                    .map_or(0.0, |p| p.cached_price),
+                MODEL_PRICING.get(self.config.model.as_str())
+                    .map_or(0.0, |p| p.output_price)
+            );
         }
 
         let start_time = Instant::now();
@@ -328,10 +354,8 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                 _ = signal::ctrl_c() => {
                     info!("Received Ctrl+C, terminating clipboard watcher.");
                     info!("Total runtime: {:?}", start_time.elapsed());
-                    info!("Total token usage: prompt={}, completion={}, total={}", 
-                        self.total_token_usage.prompt_tokens,
-                        self.total_token_usage.completion_tokens,
-                        self.total_token_usage.total_tokens
+                    info!("Total token usage: {}", 
+                        self.total_token_usage.format_details(&self.config.model)
                     );
                     break;
                 }

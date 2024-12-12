@@ -4,6 +4,52 @@ use reqwest::Client;
 use std::env;
 use tracing::info;
 use std::ops::Add;
+use std::collections::HashMap;
+use once_cell::sync::Lazy;
+
+pub static MODEL_PRICING: Lazy<HashMap<&'static str, ModelPricing>> = Lazy::new(|| {
+    let mut m = HashMap::new();
+    m.insert("gpt-4o", ModelPricing::new(2.50, 1.25, 10.0));
+    m.insert("gpt-4o-2024-11-20", ModelPricing::new(2.50, 1.25, 10.0));
+    m.insert("gpt-4o-2024-08-06", ModelPricing::new(2.50, 1.25, 10.0));
+    m.insert("gpt-4o-2024-05-13", ModelPricing::new(5.00, 2.50, 15.0));
+    m.insert("gpt-4o-mini", ModelPricing::new(0.150, 0.075, 0.600));
+    m.insert("gpt-4o-mini-2024-07-18", ModelPricing::new(0.150, 0.075, 0.600));
+    m.insert("o1-preview", ModelPricing::new(15.0, 7.50, 60.0));
+    m.insert("o1-preview-2024-09-12", ModelPricing::new(15.0, 7.50, 60.0));
+    m.insert("o1-mini", ModelPricing::new(3.0, 1.50, 12.0));
+    m.insert("o1-mini-2024-09-12", ModelPricing::new(3.0, 1.50, 12.0));
+    m
+});
+
+#[derive(Debug, Clone, Copy)]
+pub struct ModelPricing {
+    pub input_price: f64,    // per 1M tokens
+    pub cached_price: f64,   // per 1M tokens
+    pub output_price: f64,   // per 1M tokens
+}
+
+impl ModelPricing {
+    pub fn new(input_price: f64, cached_price: f64, output_price: f64) -> Self {
+        Self {
+            input_price,
+            cached_price,
+            output_price,
+        }
+    }
+
+    pub fn calculate_cost(&self, usage: &TokenUsage) -> f64 {
+        let cached_cost = (usage.prompt_tokens_details.as_ref().map_or(0, |d| d.cached_tokens) as f64 / 1_000_000.0) * self.cached_price;
+        let regular_input_cost = ((usage.prompt_tokens - usage.prompt_tokens_details.as_ref().map_or(0, |d| d.cached_tokens)) as f64 / 1_000_000.0) * self.input_price;
+        let output_cost = (usage.completion_tokens as f64 / 1_000_000.0) * self.output_price;
+        cached_cost + regular_input_cost + output_cost
+    }
+}
+
+#[derive(Debug, Deserialize, Default, Clone, Copy)]
+pub struct PromptTokenDetails {
+    pub cached_tokens: u32,
+}
 
 #[derive(Debug, Deserialize, Default, Clone, Copy)]
 pub struct CompletionTokenDetails {
@@ -18,7 +64,42 @@ pub struct TokenUsage {
     pub completion_tokens: u32,
     pub total_tokens: u32,
     #[serde(default)]
+    pub prompt_tokens_details: Option<PromptTokenDetails>,
+    #[serde(default)]
     pub completion_tokens_details: Option<CompletionTokenDetails>,
+}
+
+impl TokenUsage {
+    pub fn get_cost(&self, model: &str) -> Option<f64> {
+        MODEL_PRICING.get(model).map(|pricing| pricing.calculate_cost(self))
+    }
+
+    pub fn format_details(&self, model: &str) -> String {
+        let mut details = format!("prompt={}, completion={}, total={}", 
+            self.prompt_tokens, 
+            self.completion_tokens, 
+            self.total_tokens
+        );
+
+        if let Some(pd) = self.prompt_tokens_details {
+            details.push_str(&format!(", cached={}", pd.cached_tokens));
+        }
+
+        if let Some(cd) = self.completion_tokens_details {
+            details.push_str(&format!(
+                ", reasoning={}, accepted={}, rejected={}", 
+                cd.reasoning_tokens,
+                cd.accepted_prediction_tokens,
+                cd.rejected_prediction_tokens
+            ));
+        }
+
+        if let Some(cost) = self.get_cost(model) {
+            details.push_str(&format!(", cost=${:.6}", cost));
+        }
+
+        details
+    }
 }
 
 impl Add for TokenUsage {
@@ -29,6 +110,12 @@ impl Add for TokenUsage {
             prompt_tokens: self.prompt_tokens + other.prompt_tokens,
             completion_tokens: self.completion_tokens + other.completion_tokens,
             total_tokens: self.total_tokens + other.total_tokens,
+            prompt_tokens_details: match (self.prompt_tokens_details, other.prompt_tokens_details) {
+                (Some(a), Some(b)) => Some(PromptTokenDetails {
+                    cached_tokens: a.cached_tokens + b.cached_tokens,
+                }),
+                _ => None,
+            },
             completion_tokens_details: match (self.completion_tokens_details, other.completion_tokens_details) {
                 (Some(a), Some(b)) => Some(CompletionTokenDetails {
                     reasoning_tokens: a.reasoning_tokens + b.reasoning_tokens,
