@@ -173,6 +173,7 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
             .collect::<Vec<_>>()
             .join("\n");
 
+        info!("Starting AI analysis of clipboard content ({} characters)", content.len());
         let check_prompt = format!(
             r#"Analyze the following content and determine if it contains code blocks or changes that need to be applied to files.
             This is from the user's clipboard. A lot of times the user can copy things that are not code, or are not relevant to the current project.
@@ -210,7 +211,7 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                 self.update_token_usage(usage);
 
                 if !parsed_response.contains_code {
-                    info!("No code changes detected by AI");
+                    info!("AI analysis: No code changes detected in clipboard content");
                     return Ok(());
                 }
 
@@ -219,17 +220,21 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                     .collect();
 
                 if files.is_empty() {
-                    info!("All detected files are in ignored paths");
+                    info!("AI analysis: All detected files are in ignored paths");
                     return Ok(());
                 }
 
-                info!("Processing {} files: {:?}", files.len(), files);
+                info!("AI analysis: Found {} files to process", files.len());
+                for (i, file) in files.iter().enumerate() {
+                    info!("File {}/{}: {}", i + 1, files.len(), file);
+                }
 
                 // Process each file
-                for file_path in files {
+                for (i, file_path) in files.iter().enumerate() {
                     let file_start_time = Instant::now();
                     let mut io_time = Duration::default();
                     let full_path = self.config.watch_path.join(&file_path);
+                    info!("Processing file {}/{}: {}", i + 1, files.len(), file_path);
                     debug!("Processing file: {:?}", full_path);
 
                     let io_start = Instant::now();
@@ -252,7 +257,8 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                            - Remove any temporary/instructional comments like "// ... rest of the code ..."
                            - Remove any comments that were meant to guide you
                         4. When deciding what changes to apply:
-                           - Carefully analyze which parts of the original content should be kept
+                           - ONLY apply changes that are meant for this specific file ({})
+                           - Ignore any changes meant for other files
                            - Don't remove code that isn't being modified by the changes
                            - Think about the context and purpose of each section
                         5. Maintain consistent code style with the original file
@@ -262,11 +268,13 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                         Current content:
                         {}
                         
-                        Changes to apply:
+                        Changes to apply (ONLY apply changes meant for {}):
                         {}
                         "#,
+                        file_path,
                         if is_new_file { "NEW FILE" } else { "EXISTING FILE" },
                         current_content,
+                        file_path,
                         content
                     );
 
@@ -301,7 +309,7 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
 
                             self.add_to_history(file_path.clone());
                             processing_stats.push(ProcessingStats {
-                                file_path,
+                                file_path: file_path.clone(),
                                 total_time: file_start_time.elapsed(),
                                 llm_response_time: response.response_time,
                                 io_time,
@@ -352,11 +360,23 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
     }
 
     pub async fn run(&mut self) -> Result<(), ClipboardError> {
+        // Check for OpenAI API key if AI is enabled
+        if self.config.ai_enabled {
+            if std::env::var("OPENAI_API_KEY").is_err() {
+                error!("OpenAI API key not found in environment. Please set OPENAI_API_KEY environment variable.");
+                return Err(ClipboardError::ConfigError("OPENAI_API_KEY environment variable not set".to_string()));
+            }
+        }
+
         let mut clipboard = Clipboard::new()
             .map_err(|e| ClipboardError::ClipboardInitError(e.to_string()))?;
+        
+        // Initialize last_content with current clipboard content to ignore initial state
+        let mut last_content = clipboard.get_text()
+            .unwrap_or_default();
+        
         let mut interval = time::interval(Duration::from_millis(self.config.interval_ms));
-        let mut last_content = String::new();
-
+        
         info!("Started {} clipboard at {:?}", 
             if self.config.one_shot { "one-shot processing" } else { "watching" },
             self.config.watch_path
