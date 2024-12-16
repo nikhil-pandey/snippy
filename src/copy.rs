@@ -26,7 +26,7 @@ pub trait ClipboardCopier {
     async fn copy_files_to_clipboard(&self, files: Vec<String>) -> Result<(), ClipboardError>;
 }
 
-#[warn(dead_code)]
+#[allow(dead_code)]
 pub struct BasicClipboardCopier {
     config: ClipboardCopierConfig,
     base_path: String,

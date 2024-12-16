@@ -15,6 +15,7 @@ use walkdir::WalkDir;
 use std::time::Instant;
 use glob::Pattern;
 use std::collections::HashMap;
+use futures::future::join_all;
 
 const MAX_HISTORY_SIZE: usize = 10;
 const DEFAULT_IGNORE_PATTERNS: &[&str] = &[
@@ -229,98 +230,147 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                     info!("File {}/{}: {}", i + 1, files.len(), file);
                 }
 
-                // Process each file
-                for (i, file_path) in files.iter().enumerate() {
-                    let file_start_time = Instant::now();
-                    let mut io_time = Duration::default();
-                    let full_path = self.config.watch_path.join(&file_path);
-                    info!("Processing file {}/{}: {}", i + 1, files.len(), file_path);
-                    debug!("Processing file: {:?}", full_path);
+                // Process files in parallel
+                let mut futures = Vec::new();
+                let total_files = files.len();
+                
+                // Convert files to a Vec of owned Strings to avoid borrowing issues
+                let files: Vec<String> = files.into_iter().collect();
+                
+                // Create owned versions of all data needed in the async tasks
+                let content = content.to_string();
+                let watch_path = self.config.watch_path.clone();
+                let model = self.config.model.clone();
+                let predictions_enabled = self.config.predictions_enabled;
+                let store_enabled = self.config.store_enabled;
+                let metadata = self.config.metadata.clone();
 
-                    let io_start = Instant::now();
-                    let (current_content, is_new_file) = if full_path.exists() {
-                        (fs::read_to_string(&full_path)
-                            .map_err(|e| ClipboardError::FileError(format!("Failed to read {}: {}", file_path, e)))?, false)
-                    } else {
-                        info!("File {} does not exist, will be created as new", file_path);
-                        (String::new(), true)
-                    };
-                    io_time += io_start.elapsed();
+                for (i, file_path) in files.into_iter().enumerate() {
+                    let content = content.clone();
+                    let watch_path = watch_path.clone();
+                    let model = model.clone();
+                    let metadata = metadata.clone();
 
-                    let update_prompt = format!(
-                        r#"Update or create the following file based on the provided changes.
-                        Important:
-                        1. Output ONLY the final content of the file
-                        2. No markdown, no backticks, just the content
-                        3. Think carefully about which comments to preserve:
-                           - Keep meaningful documentation and code explanation comments
-                           - Remove any temporary/instructional comments like "// ... rest of the code ..."
-                           - Remove any comments that were meant to guide you
-                        4. When deciding what changes to apply:
-                           - ONLY apply changes that are meant for this specific file ({})
-                           - Ignore any changes meant for other files
-                           - Don't remove code that isn't being modified by the changes
-                           - Think about the context and purpose of each section
-                        5. Maintain consistent code style with the original file
-                        
-                        File status: {}
-                        
-                        Current content:
-                        {}
-                        
-                        Changes to apply (ONLY apply changes meant for {}):
-                        {}
-                        "#,
-                        file_path,
-                        if is_new_file { "NEW FILE" } else { "EXISTING FILE" },
-                        current_content,
-                        file_path,
-                        content
-                    );
+                    futures.push(tokio::spawn(async move {
+                        let file_start_time = Instant::now();
+                        let mut io_time = Duration::default();
+                        let full_path = watch_path.join(&file_path);
+                        info!("Processing file {}/{}: {}", i + 1, total_files, file_path);
+                        debug!("Processing file: {:?}", full_path);
 
-                    info!("Generating updated content for {}", file_path);
-                    let prediction = if self.config.predictions_enabled && !is_new_file {
-                        Some(current_content.as_str())
-                    } else {
-                        None
-                    };
+                        let io_start = Instant::now();
+                        let (current_content, is_new_file) = if full_path.exists() {
+                            (fs::read_to_string(&full_path)
+                                .map_err(|e| ClipboardError::FileError(format!("Failed to read {}: {}", file_path, e)))?, false)
+                        } else {
+                            info!("File {} does not exist, will be created as new", file_path);
+                            (String::new(), true)
+                        };
+                        io_time += io_start.elapsed();
 
-                    match self.llm_client.call(&update_prompt, prediction).await {
-                        Ok(response) => {
-                            info!("Generation token usage: {} (response time: {:?})", 
-                                response.usage.format_details(&self.config.model), 
-                                response.response_time
-                            );
-                            self.update_token_usage(response.usage);
+                        let update_prompt = format!(
+                            r#"Update or create the following file based on the provided changes.
+                            Important:
+                            1. Output ONLY the final content of the file
+                            2. No markdown, no backticks, just the content i.e. code and comments
+                            3. Think carefully about which comments to preserve:
+                               - Keep meaningful documentation and code explanation comments
+                               - Remove any temporary/instructional comments like "// ... rest of the code ..." or "// ... rest of the file ..." or "// remove this"
+                               - Remove any comments that were meant to guide you
+                               - Follow any guidelines provided as code comments in the changes section
+                            4. When deciding what changes to apply:
+                               - ONLY apply changes that are meant for this specific file denoted by the filename below
+                               - Ignore any changes meant for other files
+                               - Don't remove code that isn't being modified by the changes
+                               - Think about the context and purpose of each section
+                            5. Maintain consistent code style with the original file unless the new changes suggest otherwise or have better style
+                            
+                            Changes to apply (ONLY apply changes meant for this file):
+                            <changes>
+                            {}
+                            </changes>
 
-                            let io_start = Instant::now();
-                            print_diff(&file_path, &current_content, &response.content);
+                            File name: 
+                            <filename>
+                            {}
+                            </filename>
+                            
+                            File status:
+                            <status>
+                            {}
+                            </status>
+                            
+                            Current content:
+                            <current_content>
+                            {}
+                            </current_content>
+                            
+                            "#,
+                            // content first to take advantage of cached tokens
+                            content,
+                            file_path,
+                            if is_new_file { "NEW FILE" } else { "EXISTING FILE" },
+                            current_content,
+                        );
 
-                            if let Some(parent) = full_path.parent() {
-                                if !parent.exists() {
-                                    fs::create_dir_all(parent)
-                                        .map_err(|e| ClipboardError::FileError(format!("Failed to create directories for {}: {}", file_path, e)))?;
-                                }
+                        info!("Generating updated content for {}", file_path);
+                        let prediction = if predictions_enabled && !is_new_file {
+                            Some(current_content.as_str())
+                        } else {
+                            None
+                        };
+
+                        let llm_client = LLMClient::new(model.clone(), store_enabled, metadata);
+                        let response = llm_client.call(&update_prompt, prediction).await?;
+
+                        info!("Generation token usage: {} (response time: {:?})", 
+                            response.usage.format_details(&model), 
+                            response.response_time
+                        );
+
+                        let io_start = Instant::now();
+                        print_diff(&file_path, &current_content, &response.content);
+
+                        if let Some(parent) = full_path.parent() {
+                            if !parent.exists() {
+                                fs::create_dir_all(parent)
+                                    .map_err(|e| ClipboardError::FileError(format!("Failed to create directories for {}: {}", file_path, e)))?;
                             }
-
-                            fs::write(&full_path, &response.content)
-                                .map_err(|e| ClipboardError::FileError(format!("Failed to write to {}: {}", file_path, e)))?;
-                            io_time += io_start.elapsed();
-
-                            self.add_to_history(file_path.clone());
-                            processing_stats.push(ProcessingStats {
-                                file_path: file_path.clone(),
-                                total_time: file_start_time.elapsed(),
-                                llm_response_time: response.response_time,
-                                io_time,
-                                token_usage: response.usage,
-                            });
                         }
-                        Err(ClipboardError::Cancelled(_)) => {
-                            info!("File processing cancelled by user");
-                            return Ok(());
+
+                        fs::write(&full_path, &response.content)
+                            .map_err(|e| ClipboardError::FileError(format!("Failed to write to {}: {}", file_path, e)))?;
+                        io_time += io_start.elapsed();
+
+                        Ok::<_, ClipboardError>(ProcessingStats {
+                            file_path: file_path.clone(),
+                            total_time: file_start_time.elapsed(),
+                            llm_response_time: response.response_time,
+                            io_time,
+                            token_usage: response.usage,
+                        })
+                    }));
+                }
+
+                // Wait for all futures to complete
+                let results = join_all(futures).await;
+                
+                // Process results
+                for result in results {
+                    match result {
+                        Ok(Ok(stats)) => {
+                            self.add_to_history(stats.file_path.clone());
+                            self.update_token_usage(stats.token_usage);
+                            processing_stats.push(stats);
                         }
-                        Err(e) => return Err(e),
+                        Ok(Err(e)) => {
+                            error!("Error processing file: {}", e);
+                            return Err(e);
+                        }
+                        Err(e) => {
+                            error!("Task join error: {}", e);
+                            return Err(ClipboardError::TaskJoinError(e.to_string()));
+                        }
                     }
                 }
 
@@ -333,11 +383,16 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                     .sum();
 
                 info!("Processing completed in {:?}", total_time);
-                info!("Time breakdown: LLM={:?}, IO={:?}, Other={:?}", 
-                    total_llm_time,
-                    total_io_time,
-                    total_time - total_llm_time - total_io_time
-                );
+                info!("Time breakdown:");
+                info!("  LLM time: {:?}", total_llm_time);
+                info!("  IO time: {:?}", total_io_time);
+                info!("  Other time: {:?}", {
+                    if total_time > total_llm_time + total_io_time {
+                        total_time - total_llm_time - total_io_time
+                    } else {
+                        Duration::from_secs(0)
+                    }
+                });
                 info!("Files processed:");
                 for stats in processing_stats {
                     info!("  {} (total={:?}, llm={:?}, io={:?}, tokens: {})",
@@ -371,9 +426,17 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
         let mut clipboard = Clipboard::new()
             .map_err(|e| ClipboardError::ClipboardInitError(e.to_string()))?;
         
+        // Get initial clipboard content
+        let content = clipboard.get_text()
+            .map_err(|e| ClipboardError::ClipboardReadError(e.to_string()))?;
+            
+        if content.is_empty() {
+            error!("Clipboard is empty");
+            return Err(ClipboardError::ClipboardReadError("Clipboard is empty".to_string()));
+        }
+
         // Initialize last_content with current clipboard content to ignore initial state
-        let mut last_content = clipboard.get_text()
-            .unwrap_or_default();
+        let mut last_content = content.clone();
         
         let mut interval = time::interval(Duration::from_millis(self.config.interval_ms));
         
@@ -382,6 +445,7 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
             self.config.watch_path
         );
         info!("AI processing is {}", if self.config.ai_enabled { "enabled" } else { "disabled" });
+        
         if self.config.ai_enabled {
             info!("Using OpenAI model: {} (input=${:.3}/1M, cached=${:.3}/1M, output=${:.3}/1M)", 
                 self.config.model,
@@ -400,6 +464,23 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
 
         let start_time = Instant::now();
 
+        if self.config.one_shot {
+            // For one-shot mode, process immediately and return
+            if self.config.ai_enabled {
+                self.process_with_ai(&content).await?;
+            } else {
+                self.process_standard(&content).await?;
+            }
+            info!("One-shot processing completed in {:?}", start_time.elapsed());
+            if self.config.ai_enabled {
+                info!("Total token usage: {}", 
+                    self.total_token_usage.format_details(&self.config.model)
+                );
+            }
+            return Ok(());
+        }
+
+        // Watch mode loop
         loop {
             tokio::select! {
                 _ = interval.tick() => {
@@ -419,13 +500,6 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                                     match self.process_with_ai(&content).await {
                                         Ok(_) => {
                                             info!("AI processing completed successfully");
-                                            if self.config.one_shot {
-                                                info!("One-shot processing completed in {:?}", start_time.elapsed());
-                                                info!("Total token usage: {}", 
-                                                    self.total_token_usage.format_details(&self.config.model)
-                                                );
-                                                return Ok(());
-                                            }
                                         }
                                         Err(e) => {
                                             error!("AI processing failed: {}", e);
@@ -433,33 +507,18 @@ impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
                                             if let Err(e) = self.process_standard(&content).await {
                                                 error!("Standard processing also failed: {}", e);
                                             }
-                                            if self.config.one_shot {
-                                                return Err(e);
-                                            }
                                         }
                                     }
                                 } else {
                                     if let Err(e) = self.process_standard(&content).await {
                                         error!("Failed to process content: {}", e);
-                                        if self.config.one_shot {
-                                            return Err(e);
-                                        }
-                                    } else if self.config.one_shot {
-                                        info!("One-shot processing completed in {:?}", start_time.elapsed());
-                                        return Ok(());
                                     }
                                 }
                                 last_content = content;
-                            } else if self.config.one_shot {
-                                info!("No content to process");
-                                return Ok(());
                             }
                         },
                         Err(e) => {
                             error!("Failed to read clipboard content: {}", e);
-                            if self.config.one_shot {
-                                return Err(ClipboardError::ClipboardReadError(e.to_string()));
-                            }
                         }
                     }
                 },

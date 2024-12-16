@@ -43,6 +43,9 @@ pub enum ClipboardError {
 
     #[error("Operation cancelled: {0}")]
     Cancelled(String),
+
+    #[error("Task join error: {0}")]
+    TaskJoinError(String),
 }
 
 impl From<std::io::Error> for ClipboardError {

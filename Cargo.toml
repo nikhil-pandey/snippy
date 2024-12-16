@@ -1,6 +1,6 @@
 [package]
 name = "snippy"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 description = "A command-line tool for that makes using LLMs for code generation a breeze"
 authors = ["Nikhil Pandey <nikhil@nikhil.com.np>"]
@@ -32,6 +32,7 @@ markdown = "1.0.0-alpha.21"
 tempfile = "3.12.0"
 reqwest = { version = "0.11.24", features = ["json"] }
 once_cell = "1.19.0"
+futures = "0.3"
 
 [dev-dependencies]
 tracing-test = { version = "0.2.5", features = ["no-env-filter"] }
