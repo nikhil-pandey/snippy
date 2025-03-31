@@ -41,6 +41,8 @@ struct CopyArgs {
     pub first_line: String,
     #[arg(long, help = "Format the output as XML")]
     pub xml: bool,
+    #[arg(long = "ignore", help = "Patterns to ignore (e.g., 'target/**', '**/*.pyc')")]
+    pub ignore_patterns: Option<Vec<String>>,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -86,6 +88,7 @@ async fn main() {
                     .unwrap_or_else(|| "None".to_owned()),
                 first_line: args.first_line,
                 xml: args.xml,
+                ignore_patterns: args.ignore_patterns,
             };
             if let Err(e) = copy_files_to_clipboard(copier_config, args.files).await {
                 eprintln!("Error copying files to clipboard: {}", e);

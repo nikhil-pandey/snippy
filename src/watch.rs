@@ -1,6 +1,7 @@
 use crate::applier::{Applier, DiffApplier, FullContentApplier, SearchReplaceApplier};
 use crate::errors::ClipboardError;
 use crate::extractor::Extractor;
+use crate::ignore::{DEFAULT_IGNORE_PATTERNS, IgnorePatterns};
 use crate::llm::{LLMClient, TokenUsage, MODEL_PRICING};
 use crate::applier::utils::print_diff;
 use arboard::Clipboard;
@@ -13,24 +14,10 @@ use std::fs;
 use std::collections::VecDeque;
 use walkdir::WalkDir;
 use std::time::Instant;
-use glob::Pattern;
 use std::collections::HashMap;
 use futures::future::join_all;
 
 const MAX_HISTORY_SIZE: usize = 10;
-const DEFAULT_IGNORE_PATTERNS: &[&str] = &[
-    "target/**",
-    "node_modules/**",
-    ".git/**",
-    "**/*.pyc",
-    "**/__pycache__/**",
-    ".DS_Store",
-    "Cargo.lock",
-    "package-lock.json",
-    "yarn.lock",
-    "dist/**",
-    "build/**",
-];
 
 #[derive(Debug, Serialize, Deserialize)]
 struct AIResponse {
@@ -52,6 +39,7 @@ struct ProcessingStats {
     token_usage: TokenUsage,
 }
 
+#[derive(Clone)]
 pub struct WatcherConfig {
     pub watch_path: PathBuf,
     pub interval_ms: u64,
@@ -92,37 +80,27 @@ pub struct ClipboardWatcher<E: Extractor + Send + Sync> {
     modified_files: VecDeque<FileHistory>,
     llm_client: LLMClient,
     total_token_usage: TokenUsage,
-    ignore_patterns: Vec<Pattern>,
+    ignore_patterns: IgnorePatterns,
 }
 
 impl<E: Extractor + Send + Sync> ClipboardWatcher<E> {
     pub fn new(config: WatcherConfig, extractor: E) -> Self {
-        let ignore_patterns = config.ignore_patterns.iter()
-            .filter_map(|p| match Pattern::new(p) {
-                Ok(pattern) => Some(pattern),
-                Err(e) => {
-                    warn!("Invalid ignore pattern '{}': {}", p, e);
-                    None
-                }
-            })
-            .collect();
-
         ClipboardWatcher { 
             llm_client: LLMClient::new(
                 config.model.clone(),
                 config.store_enabled,
                 config.metadata.clone()
             ),
-            config, 
+            config: config.clone(), 
             extractor,
             modified_files: VecDeque::with_capacity(MAX_HISTORY_SIZE),
             total_token_usage: TokenUsage::default(),
-            ignore_patterns,
+            ignore_patterns: IgnorePatterns::new(Some(config.ignore_patterns)),
         }
     }
 
     fn should_ignore(&self, path: &str) -> bool {
-        self.ignore_patterns.iter().any(|pattern| pattern.matches(path))
+        self.ignore_patterns.should_ignore(path)
     }
 
     fn add_to_history(&mut self, file_path: String) {

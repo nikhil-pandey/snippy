@@ -1,4 +1,5 @@
 use crate::errors::ClipboardError;
+use crate::ignore::IgnorePatterns;
 use crate::reporting::print_stats;
 use crate::utils::{expand_patterns, format_content, read_file_content};
 use arboard::Clipboard;
@@ -19,6 +20,7 @@ pub struct ClipboardCopierConfig {
     pub filename_format: String,
     pub first_line: String,
     pub xml: bool,
+    pub ignore_patterns: Option<Vec<String>>,
 }
 
 #[async_trait]
@@ -31,11 +33,18 @@ pub struct BasicClipboardCopier {
     config: ClipboardCopierConfig,
     base_path: String,
     temp_dir: Option<TempDir>,
+    ignore_patterns: IgnorePatterns,
 }
 
 impl BasicClipboardCopier {
     pub fn new(config: ClipboardCopierConfig, base_path: String, temp_dir: Option<TempDir>) -> Self {
-        BasicClipboardCopier { config, base_path, temp_dir }
+        let ignore_patterns = IgnorePatterns::new(config.ignore_patterns.clone());
+        BasicClipboardCopier { 
+            config, 
+            base_path, 
+            temp_dir,
+            ignore_patterns
+        }
     }
 }
 
@@ -63,11 +72,9 @@ impl ClipboardCopier for BasicClipboardCopier {
             all_content.push_str("<files>\n");
         }
 
-        let folders_or_files_to_ignore = vec!["target/", "node_modules/", ".git/", "obj/", "bin/", "Debug/"];
-
         for file in file_list {
             debug!("Processing file: {}", file);
-            if folders_or_files_to_ignore.iter().any(|folder| file.replace("\\", "/").contains(folder)) {
+            if self.ignore_patterns.should_ignore(&file) {
                 debug!("Skipping file: {}", file);
                 continue;
             }
